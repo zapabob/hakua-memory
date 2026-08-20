@@ -29,6 +29,8 @@ jobs:
   test:
     needs: lint
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONIOENCODING: utf-8
     strategy:
       fail-fast: false
       matrix:
