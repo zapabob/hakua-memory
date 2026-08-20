@@ -1,0 +1,28 @@
+# Python artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Build and packaging output
+build/
+dist/
+*.egg
+
+# Test and tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# Local memory databases and generated knowledge-base output
+*.db
+*.sqlite
+*.sqlite3
+.memory/
+knowledge-base/
+wiki/
