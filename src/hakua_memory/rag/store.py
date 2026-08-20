@@ -9,8 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from .models import AclEntry, Chunk, Citation, Document, MeetingItem
+from .models import AclCheckResult, AclEntry, Chunk, Citation, Document, MeetingItem
 from .schema import ALL_DDL
+
+# Import ACL constants for convenience
+from .models import ACL_READ, ACL_WRITE, ACL_DELETE, ALL_ACL_PERMISSIONS
 
 
 def _now_iso() -> str:
@@ -254,18 +257,20 @@ class DocumentStore:
     # ── ACL CRUD ──────────────────────────────────────────────────
 
     def grant_acl(self, entry: AclEntry) -> str:
+        """Grant an ACL entry. Returns the ACL key."""
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO acl (document_id, principal, permission, granted_at)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO acl (document_id, principal, permission, department, granted_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (entry.document_id, entry.principal, entry.permission, _now_iso()),
+                (entry.document_id, entry.principal, entry.permission, entry.department, _now_iso()),
             )
             conn.commit()
         return f"{entry.document_id}:{entry.principal}:{entry.permission}"
 
     def revoke_acl(self, document_id: str, principal: str, permission: str) -> bool:
+        """Revoke a specific ACL entry."""
         with self._conn() as conn:
             cur = conn.execute(
                 "DELETE FROM acl WHERE document_id = ? AND principal = ? AND permission = ?",
@@ -275,13 +280,79 @@ class DocumentStore:
             return cur.rowcount > 0
 
     def check_acl(self, document_id: str, principal: str) -> list[str]:
-        """Return list of permissions the principal has on the document."""
+        """Return list of permission strings the principal has on the document."""
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT permission FROM acl WHERE document_id = ? AND principal = ?",
                 (document_id, principal),
             ).fetchall()
         return [row["permission"] for row in rows]
+
+    def check_acl_detailed(self, document_id: str, principal: str) -> AclCheckResult:
+        """Return detailed ACL result for a principal on a document."""
+        perms = self.check_acl(document_id, principal)
+        return AclCheckResult(
+            document_id=document_id,
+            principal=principal,
+            can_read=ACL_READ in perms,
+            can_write=ACL_WRITE in perms,
+            can_delete=ACL_DELETE in perms,
+            permissions=perms,
+        )
+
+    def check_acl_department(self, document_id: str, department: str) -> list[str]:
+        """Check ACL permissions for a department on a document."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT permission FROM acl WHERE document_id = ? AND department = ?",
+                (document_id, department),
+            ).fetchall()
+        return [row["permission"] for row in rows]
+
+    def list_acls(
+        self,
+        *,
+        document_id: str = "",
+        principal: str = "",
+        department: str = "",
+        permission: str = "",
+        limit: int = 100,
+    ) -> list[AclEntry]:
+        """List ACL entries with optional filtering."""
+        conditions = []
+        params: list[Any] = []
+        if document_id:
+            conditions.append("document_id = ?")
+            params.append(document_id)
+        if principal:
+            conditions.append("principal = ?")
+            params.append(principal)
+        if department:
+            conditions.append("department = ?")
+            params.append(department)
+        if permission:
+            conditions.append("permission = ?")
+            params.append(permission)
+
+        query = "SELECT * FROM acl"
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " LIMIT ?"
+        params.append(limit)
+
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        return [
+            AclEntry(
+                document_id=row["document_id"],
+                principal=row["principal"],
+                permission=row["permission"],
+                department=row.get("department", ""),
+                granted_at=row["granted_at"],
+            )
+            for row in rows
+        ]
 
     # ── Meeting Items CRUD ────────────────────────────────────────
 

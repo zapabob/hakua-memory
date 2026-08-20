@@ -7,14 +7,9 @@ name = "hakua-memory"
 version = "0.2.0"
 description = "Composite memory library: Ebbinghaus + Semantic Graph + RAG + Obsidian Wiki"
 readme = "README.md"
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.11,<3.14"
 authors = [{name = "Hakua"}]
-dependencies = [
-  "sqlalchemy>=2,<3",
-  "pydantic>=2,<3",
-  "pyyaml>=6,<7>",
-]
 
 [project.optional-dependencies]
 obsidian = ["gitpython>=3,<4"]

@@ -190,20 +190,48 @@ class CompositeMemory:
         ]
 
     def grant_access(
-        self, document_id: str, principal: str, permission: str
+        self, document_id: str, principal: str, permission: str, *, department: str = ""
     ) -> dict[str, Any]:
-        """Grant ACL permission on a document."""
+        """Grant ACL permission on a document.
+        
+        Args:
+            document_id: The document ID.
+            principal: The user, group, or role.
+            permission: "read", "write", or "delete".
+            department: Optional department scope.
+        """
         entry = AclEntry(
             document_id=document_id,
             principal=principal,
             permission=permission,
+            department=department,
         )
         key = self.documents.grant_acl(entry)
-        return {"acl_key": key}
+        return {"acl_key": key, "permission": entry.permission}
 
-    def check_access(self, document_id: str, principal: str) -> list[str]:
-        """Check ACL permissions for a principal on a document."""
-        return self.documents.check_acl(document_id, principal)
+    def revoke_access(self, document_id: str, principal: str, permission: str) -> dict[str, Any]:
+        """Revoke ACL permission on a document."""
+        success = self.documents.revoke_acl(document_id, principal, permission)
+        return {"revoked": success}
+
+    def check_access(self, document_id: str, principal: str) -> dict[str, Any]:
+        """Check ACL permissions for a principal on a document.
+        
+        Returns a dict with boolean flags and the permissions list.
+        """
+        result = self.documents.check_acl_detailed(document_id, principal)
+        return {
+            "document_id": result.document_id,
+            "principal": result.principal,
+            "can_read": result.can_read,
+            "can_write": result.can_write,
+            "can_delete": result.can_delete,
+            "permissions": result.permissions,
+        }
+
+    def check_access_department(self, document_id: str, department: str) -> list[str]:
+        """Check ACL permissions for a department on a document."""
+        return self.documents.check_acl_department(document_id, department)
 
     def _get_chunks(self, document_id: str) -> list:
         """Get all chunks for a document."""

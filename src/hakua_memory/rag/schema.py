@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS acl (
     document_id TEXT NOT NULL,
     principal TEXT NOT NULL,
     permission TEXT NOT NULL,
+    department TEXT NOT NULL DEFAULT '',
     granted_at TEXT NOT NULL,
     PRIMARY KEY(document_id, principal, permission),
     FOREIGN KEY(document_id) REFERENCES documents(document_id) ON DELETE CASCADE
@@ -127,6 +128,7 @@ CREATE TABLE IF NOT EXISTS acl (
 
 CREATE INDEX IF NOT EXISTS idx_acl_principal ON acl(principal);
 CREATE INDEX IF NOT EXISTS idx_acl_document ON acl(document_id);
+CREATE INDEX IF NOT EXISTS idx_acl_department ON acl(department);
 """
 
 DDL_CHUNKS_FTS = """
