@@ -10,6 +10,7 @@ readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11,<3.14"
 authors = [{name = "Hakua"}]
+dependencies = ["pyyaml>=6"]
 
 [project.optional-dependencies]
 obsidian = ["gitpython>=3,<4"]
@@ -17,9 +18,10 @@ embedding = ["llama-cpp-python>=0.3,<1"]
 rag = [
   "pypdf>=4,<5",
   "python-docx>=1,<2",
-  "python-pptx>=1,<2",
+  "python-pptx>=1,<2>",
 ]
 dev = ["pytest>=8", "ruff"]
+all = ["pyyaml>=6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
