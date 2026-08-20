@@ -156,4 +156,4 @@ The integration path can be exercised with a temporary directory and the determi
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
