@@ -103,7 +103,7 @@ def test_rag_e2e() -> None:
             cm.grant_access(did, "bob", "read")
             perms = cm.check_access(did, "alice")
             print(f"[acl] alice permissions: {perms}")
-            assert "read" in perms
+            assert "read" in perms["permissions"]
 
             # Search with ACL filter: alice should see the doc
             alice_results = cm.search_documents("Project", top_k=5, principal="alice")
