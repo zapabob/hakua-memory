@@ -1,6 +1,6 @@
 # hakua-memory
 
-> **TL;DR:** `hakua-memory` is a self-contained Python memory library for autonomous agents. It combines SQLite-backed Ebbinghaus memory, a structured semantic graph, optional embedding-based retrieval, sleep-cycle consolidation, and Obsidian-compatible diary and dream exports behind a small, composable API.
+> **TL;DR:** `hakua-memory` is a self-contained Python memory library for autonomous agents. It combines SQLite-backed Ebbinghaus memory, a structured semantic graph, optional embedding-based retrieval, RAG (Retrieval-Augmented Generation) with citation tracking and ACL filtering, sleep-cycle consolidation, and Obsidian-compatible diary and dream exports behind a small, composable API.
 
 ## Overview
 
@@ -27,11 +27,20 @@ Long-running agents need more than a vector index. They need memories that can d
   - Optional `llama-cpp-python` backend
   - Versioned embedding namespaces and dimension validation
   - Hybrid lexical/dense retrieval with deterministic reciprocal-rank fusion
+- **RAG (Retrieval-Augmented Generation)**
+  - Document ingestion (PDF, DOCX, PPTX, Markdown, plain text)
+  - Page/slide/section-aware chunking with provenance
+  - Document version management
+  - ACL (Access Control List) filtering per document
+  - Citation context rendering (Markdown + XML)
+  - Meeting item extraction (decisions, tasks, action items, unresolved items)
+  - Contradiction detection between documents
+  - CJK-aware search with FTS + LIKE fallback
 - **Obsidian export**
   - Diary and dream markdown exports
   - Human-readable files suitable for an Obsidian vault
 - **Single composite API**
-  - One entry point for remembering, recalling, graph updates, retrieval, sleep, export, and status reporting
+  - One entry point for remembering, recalling, graph updates, RAG operations, retrieval, sleep, export, and status reporting
 
 ## Installation
 
@@ -55,6 +64,9 @@ python -m pip install "hakua-memory[obsidian]"
 
 # llama.cpp embedding support
 python -m pip install "hakua-memory[embedding]"
+
+# RAG document ingestion (PDF/DOCX/PPTX)
+python -m pip install "hakua-memory[rag]"
 ```
 
 ## Quick start
@@ -91,6 +103,48 @@ memory.add_node(
 print(memory.stats())
 memory.sleep()
 memory.export_wiki(Path("knowledge-base"))
+```
+
+## RAG Quick start
+
+```python
+from pathlib import Path
+from hakua_memory import CompositeMemory
+
+memory = CompositeMemory(Path(".memory"))
+
+# Ingest a PDF document
+result = memory.ingest_document(
+    Path("meeting_notes.pdf"),
+    title="Q3 Planning Meeting",
+    author="Alice",
+    department="Product",
+)
+print(result)  # {'document_id': '...', 'title': '...', 'chunks': 12, ...}
+
+# Search with citation tracking
+results = memory.search_documents("release schedule", top_k=5)
+for r in results:
+    print(f"[{r['rank']}] {r['document_title']} (p.{r.get('page_number')})")
+    print(f"    {r['content'][:100]}...")
+
+# Render citation context for RAG answers
+context = memory.render_citations(results, format="markdown")
+print(context)
+
+# Extract meeting items (decisions, tasks, action items)
+items = memory.extract_meeting_items(results[0]["document_id"])
+for item in items:
+    print(f"[{item['item_type']}] {item['content']}")
+
+# Grant ACL access and search with filtering
+memory.grant_access(results[0]["document_id"], "alice", "read")
+alice_results = memory.search_documents("schedule", principal="alice")
+
+# Detect contradictions between documents
+contradictions = memory.detect_contradictions(min_confidence=0.6)
+for c in contradictions:
+    print(f"[{c['type']}] {c['description']}")
 ```
 
 ## Embedding retrieval

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hakua-memory"
-version = "0.1.0"
-description = "Composite memory library: Ebbinghaus + Semantic Graph + Obsidian Wiki"
+version = "0.2.0"
+description = "Composite memory library: Ebbinghaus + Semantic Graph + RAG + Obsidian Wiki"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11,<3.14"
@@ -13,12 +13,17 @@ authors = [{name = "Hakua"}]
 dependencies = [
   "sqlalchemy>=2,<3",
   "pydantic>=2,<3",
-  "pyyaml>=6,<7",
+  "pyyaml>=6,<7>",
 ]
 
 [project.optional-dependencies]
 obsidian = ["gitpython>=3,<4"]
 embedding = ["llama-cpp-python>=0.3,<1"]
+rag = [
+  "pypdf>=4,<5",
+  "python-docx>=1,<2",
+  "python-pptx>=1,<2",
+]
 dev = ["pytest>=8", "ruff"]
 
 [tool.setuptools.packages.find]
