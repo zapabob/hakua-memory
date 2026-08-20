@@ -18,7 +18,7 @@ embedding = ["llama-cpp-python>=0.3,<1"]
 rag = [
   "pypdf>=4,<5",
   "python-docx>=1,<2",
-  "python-pptx>=1,<2>",
+  "python-pptx>=1,<2",
 ]
 dev = ["pytest>=8", "ruff"]
 all = ["pyyaml>=6"]
