@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from .models import Chunk
 from .store import DocumentStore
-
 
 # Contradiction signal patterns (Japanese + English)
 NEGATION_PATTERNS = [
@@ -74,7 +73,6 @@ def detect_contradictions(
         List of detected contradictions.
     """
     # Get all chunks for the specified documents
-    chunks: list[Chunk] = []
     docs: dict[str, Any] = {}
 
     if document_ids:
@@ -123,7 +121,6 @@ def _compare_chunks(
     """Compare two chunks for contradictions."""
     # Check for direct contrast markers
     has_contrast_a = any(re.search(p, chunk_a.content) for p in CONTRAST_PATTERNS)
-    has_contrast_b = any(re.search(p, chunk_b.content) for p in CONTRAST_PATTERNS)
 
     # Check for negation
     has_negation_a = any(re.search(p, chunk_a.content) for p in NEGATION_PATTERNS)
@@ -186,7 +183,7 @@ def _compare_chunks(
                 document_a_title=doc_a.title,
                 document_b_title=doc_b.title,
                 contradiction_type="direct_contrast",
-                description=f"Direct contrast detected between chunks",
+                description="Direct contrast detected between chunks",
                 quote_a=chunk_a.content[:200],
                 quote_b=chunk_b.content[:200],
                 confidence=0.65,

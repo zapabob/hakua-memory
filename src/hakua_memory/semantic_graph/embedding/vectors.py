@@ -8,7 +8,6 @@ from collections.abc import Sequence
 
 from .base import EmbeddingBackendError
 
-
 FLOAT32_LE_DTYPE = "float32-le"
 _FLOAT32_SIZE = 4
 

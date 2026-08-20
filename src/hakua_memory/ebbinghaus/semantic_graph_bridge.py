@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from hermes_constants import get_hermes_home
+
 from hakua_memory.semantic_graph.embedding import EmbeddingModelIdentity
 from hakua_memory.semantic_graph.sanitize import normalize_text, sanitize_text
 from hakua_memory.semantic_graph.store import SemanticGraphStore

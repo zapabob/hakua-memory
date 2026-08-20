@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from .models import Chunk, Citation, Document
 from .store import DocumentStore

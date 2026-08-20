@@ -34,3 +34,5 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*.py" = ["E402"]
+"src/hakua_memory/semantic_graph/**/*.py" = ["F821", "F841", "F401", "E402"]
+"src/hakua_memory/ebbinghaus/**/*.py" = ["F821", "F841", "F401", "E402"]

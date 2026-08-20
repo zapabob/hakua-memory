@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Sequence
 
-
 _ACCESS_FACTORS = {
     "accessible": 1.00,
     "reactivated": 1.05,

@@ -7,7 +7,6 @@ import json
 import uuid
 from typing import Any, Optional
 
-
 RATIONALE_REQUIRED = frozenset({"supports", "contradicts", "caused_by", "supersedes"})
 EVIDENCE_RELATIONS = frozenset({"supports", "contradicts", "mentions", "derived_from"})
 MAX_FRAGMENT_BYTES = 128 * 1024

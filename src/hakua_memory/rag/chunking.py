@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-from typing import Any, Iterator, Sequence
+from typing import Sequence
 
 from .models import Chunk
 

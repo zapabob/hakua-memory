@@ -16,16 +16,14 @@ import sqlite3
 import threading
 import time
 import unicodedata
-import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from .experience import EbbinghausExperienceLedger, normalize_query_hash
 from .models import RecallAttemptResult, RetrievalOutcome
 from .policies import EbbinghausPolicies, is_protected, resolve_prune_mode
-from .experience import EbbinghausExperienceLedger, normalize_query_hash
-
 
 logger = logging.getLogger(__name__)
 

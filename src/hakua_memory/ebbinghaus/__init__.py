@@ -20,7 +20,6 @@ from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
 
-
 from .policies import EbbinghausPolicies, PolicyConfigError
 from .store import CapacityError, EbbinghausMemoryStore, forgetting_retention
 
@@ -324,6 +323,7 @@ class EbbinghausMemoryProvider(MemoryProvider):
     def save_config(self, values: Dict[str, Any], hermes_home: str) -> None:
         try:
             import yaml
+
             # Write-back round-trip: raw read only (do not persist merged defaults).
             from hermes_cli.config import read_user_config_raw
 

@@ -16,7 +16,6 @@ from typing import Any, Iterator, Optional
 
 from .sanitize import sanitize_metadata, sanitize_value
 
-
 logger = logging.getLogger("hakua_memory.semantic_graph")
 
 DB_SCHEMA_VERSION = 3

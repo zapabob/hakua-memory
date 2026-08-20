@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from hakua_memory.composite import CompositeMemory
-from hakua_memory.rag.models import AclEntry, AclCheckResult
+from hakua_memory.rag.models import AclCheckResult, AclEntry
 
 
 def test_acl_three_levels() -> None:

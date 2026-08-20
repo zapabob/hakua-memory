@@ -5,14 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import uuid
 from collections.abc import Sequence
 from typing import Any, Optional
 
 from . import graph as _graph
 from .abstention import decide_abstention, extract_retrieval_features
-from .config import SemanticGraphConfig, load_config
 from .cognitive import activate_cognitive_rerank, observe_cognitive_rerank
+from .config import SemanticGraphConfig, load_config
 from .embedding import (
     EmbeddingBackend,
     EmbeddingBackendError,

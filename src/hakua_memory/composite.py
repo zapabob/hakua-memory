@@ -7,19 +7,18 @@ from pathlib import Path
 from typing import Any, Optional
 
 from hakua_memory.ebbinghaus.store import EbbinghausMemoryStore
-from hakua_memory.obsidian import write_diary, write_dream
+from hakua_memory.obsidian import write_diary
 from hakua_memory.rag import (
     AclEntry,
     DocumentStore,
-    MeetingItem,
     RagResult,
+    detect_contradictions,
+    extract_meeting_items,
     ingest_document,
     ingest_markdown_string,
     ingest_text_string,
     render_citation_context,
     search_chunks,
-    extract_meeting_items,
-    detect_contradictions,
 )
 from hakua_memory.semantic_graph.embedding.base import EmbeddingBackend
 from hakua_memory.semantic_graph.retrieval import hybrid_search_and_rank
@@ -193,7 +192,6 @@ class CompositeMemory:
         self, document_id: str, principal: str, permission: str, *, department: str = ""
     ) -> dict[str, Any]:
         """Grant ACL permission on a document.
-        
         Args:
             document_id: The document ID.
             principal: The user, group, or role.
@@ -216,7 +214,6 @@ class CompositeMemory:
 
     def check_access(self, document_id: str, principal: str) -> dict[str, Any]:
         """Check ACL permissions for a principal on a document.
-        
         Returns a dict with boolean flags and the permissions list.
         """
         result = self.documents.check_acl_detailed(document_id, principal)

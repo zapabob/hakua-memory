@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
-import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from .models import AclCheckResult, AclEntry, Chunk, Citation, Document, MeetingItem
-from .schema import ALL_DDL
-
 # Import ACL constants for convenience
-from .models import ACL_READ, ACL_WRITE, ACL_DELETE, ALL_ACL_PERMISSIONS
+from .models import (
+    ACL_DELETE,
+    ACL_READ,
+    ACL_WRITE,
+    AclCheckResult,
+    AclEntry,
+    Chunk,
+    Citation,
+    Document,
+    MeetingItem,
+)
+from .schema import ALL_DDL
 
 
 def _now_iso() -> str:
@@ -452,8 +460,6 @@ class DocumentStore:
 
 
 # ── Helpers ───────────────────────────────────────────────────────
-
-import json
 
 
 def _json_dump(obj: dict[str, Any]) -> str:

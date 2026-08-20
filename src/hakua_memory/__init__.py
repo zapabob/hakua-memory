@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+from hakua_memory.composite import CompositeMemory
 from hakua_memory.ebbinghaus.store import (
-    forgetting_retention,
     _encode_memory,
+    forgetting_retention,
 )
 from hakua_memory.semantic_graph.store import (
     DB_SCHEMA_VERSION,
     GRAPH_SCHEMA_VERSION,
 )
-from hakua_memory.composite import CompositeMemory
 
 __all__ = [
     "forgetting_retention",

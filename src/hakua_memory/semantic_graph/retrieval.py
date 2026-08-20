@@ -14,7 +14,6 @@ from .embedding.serializer import (
 )
 from .embedding.vectors import EmbeddingVectorError
 
-
 _RECALL_SYNONYMS = {
     "フロント": "frontend",
     "フロント側": "frontend",

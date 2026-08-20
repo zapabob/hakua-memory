@@ -8,7 +8,7 @@ from .ingestion import (
     ingest_text_string,
 )
 from .meeting import extract_meeting_items
-from .models import AclCheckResult, AclEntry, Chunk, Citation, Document, MeetingItem
+from .models import AclEntry, Chunk, Citation, Document, MeetingItem
 from .retrieval import RagResult, render_citation_context, search_chunks
 from .schema import ALL_DDL
 from .store import DocumentStore

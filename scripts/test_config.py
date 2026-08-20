@@ -8,8 +8,6 @@ from pathlib import Path
 from hakua_memory.config import (
     EmbeddingConfig,
     HakuaMemoryConfig,
-    ObsidianConfig,
-    RagConfig,
     load_config,
 )
 
