@@ -18,10 +18,15 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agent.memory_provider import MemoryProvider
-
 from .policies import EbbinghausPolicies, PolicyConfigError
 from .store import CapacityError, EbbinghausMemoryStore, forgetting_retention
+
+# MemoryProvider is a Hermes Agent interface — imported lazily
+# so the package works standalone outside Hermes.
+try:
+    from agent.memory_provider import MemoryProvider
+except ImportError:
+    MemoryProvider = object  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
 
