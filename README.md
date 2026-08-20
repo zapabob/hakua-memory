@@ -2,6 +2,22 @@
 
 > **TL;DR:** `hakua-memory` is a self-contained Python memory library for autonomous agents. It combines SQLite-backed Ebbinghaus memory, a structured semantic graph, optional embedding-based retrieval, RAG (Retrieval-Augmented Generation) with citation tracking and ACL filtering, sleep-cycle consolidation, and Obsidian-compatible diary and dream exports behind a small, composable API.
 
+## Install
+
+```bash
+pip install hakua-memory
+```
+
+That's it. Python 3.11–3.13 supported.
+
+Optional extras:
+
+```bash
+pip install "hakua-memory[rag]"        # PDF/DOCX/PPTX ingestion
+pip install "hakua-memory[embedding]"  # llama.cpp embeddings
+pip install "hakua-memory[obsidian]"   # Obsidian helpers
+```
+
 ## Overview
 
 Long-running agents need more than a vector index. They need memories that can decay, be reinforced, be inspected as structured claims, and be exported into a human-readable knowledge base.
@@ -47,26 +63,21 @@ Long-running agents need more than a vector index. They need memories that can d
 Python 3.11, 3.12, and 3.13 are supported.
 
 ```bash
-python -m pip install hakua-memory
+pip install hakua-memory
 ```
 
 For local development:
 
 ```bash
-python -m pip install -e ".[dev]"
+pip install -e ".[dev]"
 ```
 
 Optional extras:
 
 ```bash
-# Obsidian/Git integration helpers
-python -m pip install "hakua-memory[obsidian]"
-
-# llama.cpp embedding support
-python -m pip install "hakua-memory[embedding]"
-
-# RAG document ingestion (PDF/DOCX/PPTX)
-python -m pip install "hakua-memory[rag]"
+pip install "hakua-memory[rag]"        # PDF/DOCX/PPTX ingestion
+pip install "hakua-memory[embedding]"  # llama.cpp embeddings
+pip install "hakua-memory[obsidian]"   # Obsidian helpers
 ```
 
 ## Quick start
