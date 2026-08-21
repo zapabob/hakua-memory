@@ -14,6 +14,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from .embedding.base import EmbeddingModelIdentity
+from .embedding.vectors import (
+    FLOAT32_LE_DTYPE,
+    EmbeddingVectorError,
+    cosine_similarity,
+    l2_normalize,
+    pack_float32_le,
+    unpack_float32_le,
+)
 from .sanitize import sanitize_metadata, sanitize_value
 
 logger = logging.getLogger("hakua_memory.semantic_graph")

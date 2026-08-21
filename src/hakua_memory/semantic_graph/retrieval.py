@@ -13,6 +13,7 @@ from .embedding.serializer import (
     source_text_hash,
 )
 from .embedding.vectors import EmbeddingVectorError
+from .fusion import reciprocal_rank_fusion
 
 _RECALL_SYNONYMS = {
     "フロント": "frontend",
