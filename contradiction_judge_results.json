@@ -1,0 +1,67 @@
+[
+  {
+    "query": "キャッシュフロー分析",
+    "has_contradiction": false,
+    "description": "矛盾なし - 比較対象となる複数の情報源からデータが得られていません",
+    "confidence": 0.9,
+    "contradiction_type": "none",
+    "conflicting_sources": [],
+    "details": {
+      "ebbinghaus": "データあり",
+      "rag": "データなし",
+      "cog": "データなし"
+    }
+  },
+  {
+    "query": "マイクロサービスアーキテクチャ",
+    "has_contradiction": false,
+    "description": "矛盾なし - 比較対象となる複数の情報源からデータが得られていません",
+    "confidence": 0.9,
+    "contradiction_type": "none",
+    "conflicting_sources": [],
+    "details": {
+      "ebbinghaus": "データあり",
+      "rag": "データなし",
+      "cog": "データなし"
+    }
+  },
+  {
+    "query": "医療DX推進",
+    "has_contradiction": false,
+    "description": "矛盾なし - 比較対象となる複数の情報源からデータが得られていません",
+    "confidence": 0.9,
+    "contradiction_type": "none",
+    "conflicting_sources": [],
+    "details": {
+      "ebbinghaus": "データあり",
+      "rag": "データなし",
+      "cog": "データなし"
+    }
+  },
+  {
+    "query": "スマートファクトリー導入",
+    "has_contradiction": false,
+    "description": "矛盾なし - 比較対象となる複数の情報源からデータが得られていません",
+    "confidence": 0.9,
+    "contradiction_type": "none",
+    "conflicting_sources": [],
+    "details": {
+      "ebbinghaus": "データなし",
+      "rag": "データなし",
+      "cog": "データなし"
+    }
+  },
+  {
+    "query": "オムニチャネル戦略",
+    "has_contradiction": false,
+    "description": "矛盾なし - 比較対象となる複数の情報源からデータが得られていません",
+    "confidence": 0.9,
+    "contradiction_type": "none",
+    "conflicting_sources": [],
+    "details": {
+      "ebbinghaus": "データあり",
+      "rag": "データなし",
+      "cog": "データなし"
+    }
+  }
+]
