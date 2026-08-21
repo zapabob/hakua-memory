@@ -1,0 +1,386 @@
+```mermaid
+flowchart TB
+    %% User/External Interfaces
+    User[("👤 User / Agent")]
+    HermesAgent["🤖 Hermes Agent\n(LLM Provider)"]
+    Obsidian[("📓 Obsidian Vault")]
+
+    %% Main Entry Point
+    subgraph API["🔧 CompositeMemory API"]
+        direction TB
+        Remember["remember()\n思い出す"]
+        Recall["recall()\n想起"]
+        AddNode["add_node()\nノード追加"]
+        UpsertEdge["upsert_edge()\nエッジ追加"]
+        IngestDoc["ingest_document()\n文書取込"]
+        SearchDocs["search_documents()\n文書検索"]
+        Sleep["sleep()\n睡眠サイクル"]
+        ExportWiki["export_wiki()\nWiki出力"]
+        Stats["stats()\n統計取得"]
+    end
+
+    %% Three Core Memory Systems
+    subgraph MemorySystems["🧠 Three Memory Systems"]
+        direction TB
+        
+        subgraph Ebbinghaus["🧮 Ebbinghaus Memory\n(経験的・時間的記憶)"]
+            EbbStore[("EbbinghausMemoryStore\nSQLite")]
+            EbbRecall["recall()\n想起・スコアリング"]
+            EbbRemember["remember()\n記憶保存"]
+            EbbSleep["sleep()\n忘却曲線・リハーサル"]
+            EbbVocab["JapaneseVocabulary\n6概念ラベル"]
+        end
+        
+        subgraph SemanticGraph["🕸️ Semantic Graph / CoG\n(構造化知識・関係性)"]
+            SGStore[("SemanticGraphStore\nSQLite")]
+            SGNodes["Nodes: Claim/Evidence/..."]
+            SGEdges["Edges: 10 types\ncontradicts/supports/..."]
+            SGSearch["search_nodes()\nFTS検索"]
+            SGUpsert["upsert_edge/node()"]
+        end
+        
+        subgraph RAG["📚 RAG System\n(外部知識・引用ベース)"]
+            RGStore[("DocumentStore\nSQLite")]
+            RGIngest["ingest_document()\nPDF/DOCX/PPTX/MD"]
+            RGChunk["chunk_text()\nチャンク分割"]
+            RGSearch["search_documents()\nFTS + ベクトル"]
+            RGCite["render_citations()\n引用レンダリング"]
+            RGACL["ACL Filtering"]
+        end
+    end
+
+    %% Contradiction Detection Layer
+    subgraph Contradiction["⚖️ Cross-source Contradiction Detection\n(LLM-as-Judge)"]
+        direction TB
+        CDDetector["ContradictionDetector"]
+        CDEbb["Extract Ebbinghaus Claims"]
+        CDRAG["Extract RAG Claims"]
+        CDCoG["Extract CoG Claims"]
+        CDPrompt["Build Judge Prompt\n(JSON Schema)"]
+        CDHermes["HermesLLMJudge\n(gpt-5.6-luna)"]
+        CDTypes["矛盾タイプ: factual/numerical/\ncausal/temporal/confidence"]
+    end
+
+    %% Data Generation & Benchmarking
+    subgraph Tooling["🛠️ Tooling & Benchmarks"]
+        direction TB
+        Bench["benchmark_cross_validation.py"]
+        GenData["generate_synthetic_data.py\n10 seeds × 7 domains"]
+        ContradictScript["contradiction_detector.py"]
+        HermesJudge["hermes_llm_judge.py"]
+    end
+
+    %% Storage
+    subgraph Storage["💾 Persistent Storage"]
+        direction TB
+        EbbDB[(".memory/ebbinghaus.db")]
+        SGDB[(".memory/semantic_graph.db")]
+        RGDB[(".memory/rag.db")]
+        MultiSeed[(".memory_seed*/\n10 independent instances")]
+    end
+
+    %% Connections
+    User --> API
+    HermesAgent -.->|LLM Judge| CDHermes
+    Obsidian -.->|Export| ExportWiki
+    
+    API --> Remember
+    API --> Recall
+    API --> AddNode
+    API --> UpsertEdge
+    API --> IngestDoc
+    API --> SearchDocs
+    API --> Sleep
+    API --> ExportWiki
+    API --> Stats
+
+    Remember --> EbbRemember
+    Recall --> EbbRecall
+    AddNode --> SGUpsert
+    UpsertEdge --> SGUpsert
+    IngestDoc --> RGIngest
+    SearchDocs --> RGSearch
+    Sleep --> EbbSleep
+    ExportWiki --> Obsidian
+    Stats --> EbbStore & SGStore & RGStore
+
+    %% Cross-system contradiction detection
+    CDEbb --> EbbRecall
+    CDRAG --> RGSearch
+    CDCoG --> SGSearch
+    CDEbb & CDRAG & CDCoG --> CDPrompt
+    CDPrompt --> CDHermes
+    CDHermes --> CDTypes
+    CDDetector --> CDEbb & CDRAG & CDCoG
+
+    %% Tooling connections
+    Bench --> API
+    GenData --> IngestDoc & AddNode
+    ContradictScript --> CDDetector
+    HermesJudge --> CDHermes
+
+    %% Storage connections
+    EbbStore --> EbbDB
+    SGStore --> SGDB
+    RGStore --> RGDB
+    EbbStore & SGStore & RGStore --> MultiSeed
+
+    %% Styling
+    classDef api fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef ebbinghaus fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef semantic fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef rag fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef contradiction fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef tooling fill:#f5f5f5,stroke:#424242,stroke-width:1px,stroke-dasharray: 5 5
+    classDef storage fill:#eceff1,stroke:#37474f,stroke-width:1px
+    
+    class API api
+    class Ebbinghaus,EbbStore,EbbRecall,EbbRemember,EbbSleep,EbbVocab ebbinghaus
+    class SemanticGraph,SGStore,SGNodes,SGEdges,SGSearch,SGUpsert semantic
+    class RAG,RGStore,RGIngest,RGChunk,RGSearch,RGCite,RGACL rag
+    class Contradiction,CDDetector,CDEbb,CDRAG,CDCoG,CDPrompt,CDHermes,CDTypes contradiction
+    class Tooling,Bench,GenData,ContradictScript,HermesJudge tooling
+    class Storage,EbbDB,SGDB,RGDB,MultiSeed storage
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User/Agent
+    participant CM as CompositeMemory
+    participant EB as EbbinghausMemoryStore
+    participant SG as SemanticGraphStore
+    participant RG as RAG DocumentStore
+    participant CD as ContradictionDetector
+    participant LLM as Hermes Agent (LLM Judge)
+    
+    Note over U,LLM: Cross-source Contradiction Detection Flow
+    
+    U->>CM: search_documents("キャッシュフロー分析")
+    CM->>RG: search_documents()
+    RG-->>CM: RAG chunks (投資CF最重要)
+    
+    U->>CM: recall("キャッシュフロー分析")
+    CM->>EB: recall()
+    EB-->>CM: Ebbinghaus memories (営業CF最重要)
+    
+    U->>CM: search_nodes("キャッシュフロー分析")
+    CM->>SG: search_nodes()
+    SG-->>CM: CoG nodes (FCF最重要)
+    
+    U->>CD: detect_contradictions("キャッシュフロー分析")
+    CD->>EB: recall(query, limit=5)
+    CD->>RG: search_documents(query, top_k=5)
+    CD->>SG: search_nodes(query, top_k=5)
+    
+    CD->>CD: Build Judge Prompt
+    Note right of CD: 3ソースのクレームを統合\n矛盾タイプ5種定義\nJSON出力指定
+    
+    CD->>LLM: Judge Prompt
+    LLM-->>CD: JSON判定結果
+    Note right of LLM: has_contradiction: true\ncontradiction_type: factual\nconfidence: 0.85
+    
+    CD-->>U: ContradictionResult
+```
+
+```mermaid
+erDiagram
+    %% Core Entities
+    MEMORY_SYSTEM {
+        string system_id PK
+        string type "ebbinghaus|semantic_graph|rag"
+        string db_path
+        datetime created_at
+    }
+    
+    EBBINGHAUS_MEMORY {
+        int memory_id PK
+        string content
+        string tags
+        float salience
+        float valence
+        float retention
+        float stability_days
+        string state "active|archived|forgotten"
+        string source
+        datetime created_at
+    }
+    
+    SEMANTIC_NODE {
+        string node_id PK
+        string node_type "Claim|Evidence|Fragment"
+        string label
+        string summary
+        string status "asserted|disputed|retracted"
+        string authority
+        float confidence
+        float salience
+        json metadata
+    }
+    
+    SEMANTIC_EDGE {
+        string edge_id PK
+        string source_node_id FK
+        string target_node_id FK
+        string edge_type "causes|contradicts|supports|requires|enables|prevents|relates_to|part_of|precedes|follows"
+        string label
+        float confidence
+        string status "candidate|accepted|rejected"
+        json evidence
+    }
+    
+    RAG_DOCUMENT {
+        string document_id PK
+        string title
+        string author
+        string department
+        int version
+        datetime created_at
+    }
+    
+    RAG_CHUNK {
+        string chunk_id PK
+        string document_id FK
+        int chunk_index
+        string content
+        string content_hash
+        int token_count
+    }
+    
+    CONTRADICTION_RESULT {
+        string query_id PK
+        string query
+        boolean has_contradiction
+        string contradiction_type
+        float confidence
+        json details
+        datetime judged_at
+    }
+    
+    SYNTHETIC_DATASET {
+        string dataset_id PK
+        int seed
+        string domain
+        string language
+        int entry_count
+        datetime generated_at
+    }
+    
+    %% Relationships
+    MEMORY_SYSTEM ||--o{ EBBINGHAUS_MEMORY : contains
+    MEMORY_SYSTEM ||--o{ SEMANTIC_NODE : contains
+    MEMORY_SYSTEM ||--o{ SEMANTIC_EDGE : contains
+    MEMORY_SYSTEM ||--o{ RAG_DOCUMENT : contains
+    
+    SEMANTIC_NODE ||--o{ SEMANTIC_EDGE : source
+    SEMANTIC_NODE ||--o{ SEMANTIC_EDGE : target
+    
+    RAG_DOCUMENT ||--o{ RAG_CHUNK : has
+    
+    CONTRADICTION_RESULT }|--|| EBBINGHAUS_MEMORY : references
+    CONTRADICTION_RESULT }|--|| SEMANTIC_NODE : references
+    CONTRADICTION_RESULT }|--|| RAG_CHUNK : references
+    
+    SYNTHETIC_DATASET ||--o{ RAG_DOCUMENT : generates
+    SYNTHETIC_DATASET ||--o{ EBBINGHAUS_MEMORY : generates
+    SYNTHETIC_DATASET ||--o{ SEMANTIC_NODE : generates
+```
+
+```mermaid
+graph LR
+    %% Multi-seed Training Pipeline
+    subgraph Seeds["🌱 10 Seeds (42,123,456,789,999,111,222,333,444,555)"]
+        direction TB
+        Seed42[".memory_seed42"]
+        Seed123[".memory_seed123"]
+        Seed456[".memory_seed456"]
+        Seed789[".memory_seed789"]
+        Seed999[".memory_seed999"]
+        Seed111[".memory_seed111"]
+        Seed222[".memory_seed222"]
+        Seed333[".memory_seed333"]
+        Seed444[".memory_seed444"]
+        Seed555[".memory_seed555"]
+    end
+    
+    subgraph Domains["🏢 7 Domains × Bilingual"]
+        Finance[Finance: 15 kw]
+        Tech[Technology: 15 kw]
+        Health[Healthcare: 15 kw]
+        Mfg[Manufacturing: 15 kw]
+        Retail[Retail: 15 kw]
+        Legal[Legal: 15 kw]
+        HR[HR: 15 kw]
+    end
+    
+    subgraph Pipeline["⚙️ Training Pipeline"]
+        Generate["generate_synthetic_data.py"]
+        Ingest["ingest_document()"]
+        NodeAdd["add_node()"]
+        EdgeAdd["upsert_edge()"]
+        Bench["benchmark_cross_validation.py"]
+        Contradict["contradiction_detector.py"]
+        Judge["hermes_llm_judge.py"]
+    end
+    
+    subgraph Outputs["📊 Outputs"]
+        Datasets["11,200 entries\n(10 seeds × 7 domains × 2 langs × 80)"]
+        Memories["10 independent\n.memory_seed* DBs"]
+        Edges["27 edges/seed avg\n10 edge types"]
+        Contradictions["2 detected\n(CF Analysis, Microservices)"]
+        Benchmarks["v0.3.0: 1.17ms avg"]
+    end
+    
+    Seeds --> Generate
+    Domains --> Generate
+    Generate --> Ingest
+    Generate --> NodeAdd
+    NodeAdd --> EdgeAdd
+    Ingest & NodeAdd & EdgeAdd --> Bench
+    Bench & EdgeAdd --> Contradict
+    Contradict --> Judge
+    Judge --> Outputs
+```
+
+```mermaid
+mindmap
+  root((hakua-memory v0.3.1))
+    🔧 CompositeMemory API
+      remember/recall
+      add_node/upsert_edge
+      ingest_document/search_documents
+      sleep/export_wiki/stats
+    🧠 Three Memory Systems
+      🧮 Ebbinghaus
+        SQLite持久化
+        忘却曲線・リハーサル
+        JapaneseVocabulary(6概念)
+      🕸️ Semantic Graph/CoG
+        ノード: Claim/Evidence/Fragment
+        エッジ: 10種類
+        contradicts/supports/causes...
+        FTS検索
+      📚 RAG
+        PDF/DOCX/PPTX/MD ingest
+        チャンク分割・引用追跡
+        ACLフィルタリング
+    ⚖️ Cross-source Contradiction Detection
+      LLM-as-Judge
+      3ソース統合
+      5矛盾タイプ
+      Hermes Agent統合
+      JSON出力
+    🛠️ Tooling
+      ベンチマーク
+      合成データ生成(10 seeds × 7 domains)
+      矛盾検出スクリプト
+      Hermes LLM Judge統合
+    💾 Storage
+      独立したSQLite DB
+      10シード並列訓練
+    🏷️ Key Achievements v0.3.1
+      2真の矛盾検出(CF/マイクロ)
+      10エッジタイプ実装
+      10シード×7ドメイン訓練
+      LLM Judge統合基盤
+```
