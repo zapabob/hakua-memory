@@ -43,6 +43,23 @@ class InsightStatus(str, Enum):
     EXPIRED = "expired"
 
 
+class JapaneseVocabulary(str, Enum):
+    """Japanese vocabulary for memory labeling as per user preference.
+
+    All memory concepts, labels, and identifiers should use Japanese vocabulary
+    to maintain consistency with the user's preference for Japanese-only keywords
+    in Hakua/VRChat conceptual layers.
+    """
+
+    HERMES_AGENT = "はくあ"  # Hermes Agent = central/agency kernel
+    OPENCLAW = "OpenClaw"  # OpenClaw = exterior/shell
+    VRChat_HARNESS = "VRChat Harness"  # VRChat Harness = body reflex layer
+    VOICEVOX = "VOICEVOX"  # VOICEVOX = vocal layer
+    MEMORY = "Memory"  # Memory = identity continuity
+    POLICY_GUARD = "Policy Guard"  # Policy Guard = safe autonomous boundary
+    AUDIT_LOG = "Audit Log"  # Audit Log = reflective memory
+
+
 class ValidationMethod(str, Enum):
     UNIT_TEST = "unit_test"
     EXTERNAL_SOURCE = "external_source"

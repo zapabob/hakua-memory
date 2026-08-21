@@ -1,5 +1,8 @@
-"""Obsidian template management and export."""
+"""Obsidian template management and export.
 
+Templates for integrating Obsidian knowledge with Ebbinghaus memory.
+All template labels and descriptions are in Japanese as per user preference.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
