@@ -286,6 +286,33 @@ chunk-size arguments therefore do not mean equal chunk boundaries. The lexical c
 also compares SQLite-backed graph search with an in-memory BM25 index. These scope limits
 are required for an honest cross-library measurement.
 
+The following is one recorded run from commit `e2bbb3c8bfd3bbfcd7a5e508a757917919dd5e89`
+on Windows 11 with Python 3.12.13 and an AMD64 Family 23 Model 96 CPU. It used
+`synthetic-business-v1`, seed 42, 40 samples, 40 queries, warmup 5, and 30 paired
+repetitions. Latencies are milliseconds per operation; the confidence interval is 95% CI
+for the mean.
+
+| Operation | Variant | Mean | Median | Stdev | P95 | 95% CI |
+|---|---|---:|---:|---:|---:|---:|
+| RAG chunking | hakua-memory | 0.6312 | 0.5901 | 0.1184 | 0.8746 | 0.5870–0.6754 |
+| RAG chunking | LangChain Text Splitters 1.1.2 | 0.0694 | 0.0681 | 0.0144 | 0.0854 | 0.0640–0.0747 |
+| RAG chunking | LlamaIndex Core 0.14.24 | 1.8174 | 1.6806 | 0.3354 | 2.4531 | 1.6921–1.9426 |
+| Lexical retrieval, 40-query batch | hakua-memory | 264.2875 | 155.3723 | 487.9654 | 397.6564 | 82.0782–446.4968 |
+| Lexical retrieval, 40-query batch | rank-bm25 0.2.2 | 2.5974 | 2.4707 | 0.3772 | 3.0580 | 2.4566–2.7382 |
+
+The paired two-sided Wilcoxon signed-rank p-values were `1.862645149e-09` for each
+comparison. Holm-adjusted values across the three comparisons were `5.587935448e-09`
+for each comparison. Paired t-test sensitivity p-values were `1.387202830e-21` for
+LangChain, `4.399465113e-19` for LlamaIndex, and `0.006427546` for rank-bm25. These
+p-values describe this paired latency sample only; they are not accuracy claims or proof
+of general library superiority.
+
+The dataset-specific validation found non-empty chunk output for all variants. The
+expected exact-record hit rate at top-k=5 was 33/40 (82.5%) for hakua-memory and 38/40
+(95.0%) for rank-bm25. This is a small synthetic query-set check, not a benchmark of
+retrieval quality across domains. The generated JSON and error-bar PNG are intentionally
+kept outside Git; rerun the command above to reproduce them on another machine.
+
 ### External references
 
 The measured comparison uses [LangChain Text Splitters](https://docs.langchain.com/oss/python/integrations/splitters/recursive_text_splitter),
