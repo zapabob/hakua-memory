@@ -16,6 +16,7 @@ Optional extras:
 pip install "hakua-memory[rag]"        # PDF/DOCX/PPTX ingestion
 pip install "hakua-memory[embedding]"  # llama.cpp embeddings
 pip install "hakua-memory[obsidian]"   # Obsidian helpers
+pip install "hakua-memory[all]"         # all optional integrations
 ```
 
 ## Overview
@@ -86,6 +87,7 @@ Optional extras:
 pip install "hakua-memory[rag]"        # PDF/DOCX/PPTX ingestion
 pip install "hakua-memory[embedding]"  # llama.cpp embeddings
 pip install "hakua-memory[obsidian]"   # Obsidian helpers
+pip install "hakua-memory[all]"         # all optional integrations
 ```
 
 ## Quick start
@@ -246,64 +248,48 @@ The retrieval layer validates vector dimensions, records the embedding namespace
 
 ## Performance Comparison
 
-### Internal Benchmarks (hakua-memory v0.3.0)
+### Internal reproducible benchmarks
 
-| Method | Library | Search Latency | Key Metric | Memory |
-|--------|---------|----------------|------------|--------|
-| **RAG** | hakua-memory | ~2.5ms/chunk | citation tracking 95% | ~50MB |
-| **CoG (Semantic Graph)** | hakua-memory | ~1.0ms/node | 10 edge types, relation extraction | ~30MB |
-| **Ebbinghaus** | hakua-memory | ~0.5ms/recall | decay curve, 6 JP vocab | ~10MB |
-
-*測定条件: Windows 11, RTX 5060 Ti 16GB, Python 3.12, no .venv*
-*RAG: chunk_size=100, top_k=5*
-*CoG: 1000 nodes, 5000 edges, 10 edge types*
-*Ebbinghaus: 100 recall ops avg, Japanese vocabulary*
-
-### External Library Comparison (Reference)
-
-| Library | Typical Latency | Key Metric | Memory |
-|---------|----------------|------------|--------|
-| **LangChain (RAG)** | 5-50ms/chunk | vector similarity ~85% | ~100MB |
-| **LlamaIndex (RAG)** | 10-100ms/chunk | node similarity ~80% | ~80MB |
-| **PyTorch Geometric (CoG)** | 2-5ms/node | GNN convergence ~92% | ~40MB |
-| **NetworkX (CoG)** | 10-100ms/node | path finding ~78% | ~20MB |
-| **FAISS (Vector Search)** | 0.1-1ms/query | ANN ~90%+ | ~30MB |
-
-### Statistical Summary (v0.3.0)
-
-- **Mean processing time**: 1.17ms
-- **Median**: 0.99ms
-- **Standard deviation**: ~0.9ms
-- **Detection power**: Cross-source contradiction detection operational
-
-### Evaluation Notes
-
-- Measurements: Windows 11, RTX 5060 Ti 16GB, Python 3.12
-- RAG: chunk_size=100, top_k=5
-- CoG: 10 edge types (causes, contradicts, supports, requires, enables, prevents, relates_to, part_of, precedes, follows)
-- Ebbinghaus: Japanese vocabulary (HERMES_AGENT, OPENCLAW, VRChat_HARNESS, VOICEVOX, MEMORY, POLICY_GUARD, AUDIT_LOG)
-
-## Multi-seed Multi-domain Training
-
-`hakua-memory` includes tooling for generating and training on synthetic multi-domain datasets:
+Run the existing RAG chunking, semantic-graph lexical retrieval, and Ebbinghaus recall
+operations with the same deterministic dataset and query configuration:
 
 ```bash
-# Generate synthetic datasets (10 seeds × 7 domains × bilingual)
-python scripts/generate_synthetic_data.py
-
-# Run cross-validation benchmarks
-python scripts/benchmark_cross_validation.py
-
-# Run contradiction detection
-python scripts/contradiction_detector.py
-python scripts/hermes_llm_judge.py
+python scripts/generate_synthetic_data.py \
+  --seed 42 \
+  --samples 40 \
+  --output synthetic_business_dataset.json
+python scripts/benchmark_cross_validation.py \
+  --seed 42 \
+  --samples 40 \
+  --warmup 5 \
+  --repetitions 30 \
+  --output benchmark-results.json
 ```
 
-**Dataset Coverage (v0.3.0):**
-- 10 seeds (42, 123, 456, 789, 999, 111, 222, 333, 444, 555)
-- 7 domains: Finance, Technology, Healthcare, Manufacturing, Retail, Legal, HR
-- 15 keywords/domain × bilingual (JP/EN) = 11,200 entries
-- 10 independent memory instances trained
+The benchmark output is machine-readable JSON containing the package version, commit
+SHA, timestamp, operating system, Python version, CPU, dataset id, seed, sample count,
+warmup count, repetition count, and mean, median, standard deviation, p50, p95, and p99
+latency for each measured operation. The benchmark does not use a GPU, so no GPU value
+is emitted. Generated JSON, SQLite state, and temporary benchmark databases are not
+version-controlled; `benchmarks/synthetic_dataset_config.json` records the recipe and
+expected dataset summary.
+
+Only measurements produced by this repository's harness should be described as internal
+results. This README intentionally does not publish fixed latency or accuracy numbers;
+those values depend on the recorded machine, dataset, seed, warmup, and repetitions.
+
+### External references
+
+LangChain, LlamaIndex, PyTorch Geometric, NetworkX, and FAISS are relevant external
+references. They are not run by this harness, so no direct latency, accuracy, or memory
+comparison is claimed here.
+
+## Reproducible synthetic data
+
+The generator is deterministic for a given seed and sample count. Its schema version,
+generator version, defaults, and expected summary are recorded in
+`benchmarks/synthetic_dataset_config.json`. Use a different output path when retaining
+multiple datasets; generated files remain ignored by Git.
 
 ## Architecture
 
