@@ -25,7 +25,7 @@ jobs:
         run: pip install ruff
 
       - name: Ruff lint
-        run: ruff check src scripts
+        run: ruff check src scripts tests
 
   test:
     needs: lint
@@ -48,11 +48,8 @@ jobs:
       - name: Install package (editable)
         run: pip install -e ".[dev]"
 
-      - name: Run comprehensive tests
-        run: python scripts/test_comprehensive.py
-
-      - name: Run RAG E2E tests
-        run: python scripts/test_rag_e2e.py
+      - name: Run canonical pytest suite
+        run: python -m pytest -q
 
   build:
     needs: test
