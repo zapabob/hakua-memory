@@ -1,109 +1,192 @@
-"""Cross-validation benchmark script for hakua-memory.
+from __future__ import annotations
 
-Compares the three core methodologies (RAG, CoG/Ebbinghaus) with
-benchmarks and prints results suitable for inclusion in README documentation.
-
-Usage:
-    python scripts/benchmark_cross_validation.py
-
-Output:
-    Prints benchmark results to stdout in JSON format.
-"""
-
+import argparse
 import json
+import logging
+import math
+import platform
+import statistics
+import subprocess
 import sys
+import tempfile
 import time
+from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Any, Callable, Sequence
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+try:
+    from synthetic_dataset import generate_business_dataset
+except ModuleNotFoundError:
+    from scripts.synthetic_dataset import generate_business_dataset
+
+LOGGER = logging.getLogger(__name__)
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def benchmark_rag():
-    """Benchmark A: RAG chunking performance."""
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--samples", type=int, default=40)
+    parser.add_argument("--warmup", type=int, default=5)
+    parser.add_argument("--repetitions", type=int, default=30)
+    parser.add_argument("--dataset-id", default="synthetic-business-v1")
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args(argv)
+    if args.samples < 1 or args.warmup < 0 or args.repetitions < 1:
+        parser.error("samples and repetitions must be positive; warmup cannot be negative")
+    return args
+
+
+def _percentile(values: list[float], quantile: float) -> float:
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * quantile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * weight
+
+
+def _measure(operation: Callable[[], Any], warmup: int, repetitions: int) -> dict[str, float | str]:
+    for _ in range(warmup):
+        operation()
+    durations: list[float] = []
+    for _ in range(repetitions):
+        started = time.perf_counter_ns()
+        operation()
+        durations.append((time.perf_counter_ns() - started) / 1_000_000)
+    return {
+        "metric": "latency_ms",
+        "mean": statistics.fmean(durations),
+        "median": statistics.median(durations),
+        "stdev": statistics.stdev(durations) if len(durations) > 1 else 0.0,
+        "p50": _percentile(durations, 0.50),
+        "p95": _percentile(durations, 0.95),
+        "p99": _percentile(durations, 0.99),
+    }
+
+
+def _package_version() -> str:
+    try:
+        return version("hakua-memory")
+    except PackageNotFoundError:
+        import tomllib
+
+        with (REPO_ROOT / "pyproject.toml").open("rb") as stream:
+            return str(tomllib.load(stream)["project"]["version"])
+
+
+def _git_commit_sha() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "not measured"
+    return result.stdout.strip()
+
+
+def _prepare_memory(rows: list[dict[str, str]], root: Path) -> tuple[Any, str]:
+    from hakua_memory.composite import CompositeMemory
+
+    memory = CompositeMemory(root)
+    for row in rows:
+        memory.remember(row["content"], tags=[row["domain"], row["language"]])
+        memory.add_node(
+            {
+                "node_id": f"benchmark-{row['id']}",
+                "node_type": "Claim",
+                "label": row["topic"],
+                "summary": row["content"],
+                "status": "asserted",
+                "confidence": 0.9,
+                "salience": 0.8,
+            }
+        )
+    return memory, rows[0]["topic"]
+
+
+def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     from hakua_memory.rag.chunking import chunk_text
 
-    # Generate test text (similar to performance measurement conditions)
-    text = "これはテストテキストです。検索エンジン最適化のための日本語テキストです。" * 20
-
-    start = time.time()
-    chunks = chunk_text(
-        text, document_id="bench", chunk_size=100, chunk_overlap=20
+    rows = generate_business_dataset(args.seed, args.samples)
+    rag_text = "\n".join(row["content"] for row in rows)
+    rag_chunks = chunk_text(
+        rag_text,
+        document_id="benchmark",
+        chunk_size=100,
+        chunk_overlap=20,
     )
-    elapsed = time.time() - start
 
-    return {
-        "method": "RAG",
-        "library": "hakua-memory",
-        "chunks": len(chunks),
-        "latency_ms": round(elapsed * 1000, 2),
-        "config": {"chunk_size": 100, "overlap": 20},
-    }
+    with tempfile.TemporaryDirectory(prefix="hakua-benchmark-") as temporary_root:
+        memory, query = _prepare_memory(rows, Path(temporary_root))
+        try:
+            rag_stats = _measure(
+                lambda: chunk_text(
+                    rag_text,
+                    document_id="benchmark",
+                    chunk_size=100,
+                    chunk_overlap=20,
+                ),
+                args.warmup,
+                args.repetitions,
+            )
+            graph_stats = _measure(
+                lambda: memory.search(query, top_k=5),
+                args.warmup,
+                args.repetitions,
+            )
+            ebbinghaus_stats = _measure(
+                lambda: memory.recall(query, top_k=5),
+                args.warmup,
+                args.repetitions,
+            )
+            return {
+                "metadata": {
+                    "hakua_memory_version": _package_version(),
+                    "git_commit_sha": _git_commit_sha(),
+                    "timestamp_utc": datetime.now(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "os": platform.platform(),
+                    "python_version": platform.python_version(),
+                    "cpu": platform.processor() or platform.machine() or "not measured",
+                    "dataset_id": args.dataset_id,
+                    "seed": args.seed,
+                    "number_of_samples": len(rows),
+                    "warmup_count": args.warmup,
+                    "measurement_repetitions": args.repetitions,
+                },
+                "measurements": {
+                    "rag": {"operation": "chunk_text", "chunks": len(rag_chunks), **rag_stats},
+                    "semantic_graph": {
+                        "operation": "hybrid lexical search without dense backend",
+                        **graph_stats,
+                    },
+                    "ebbinghaus": {"operation": "recall", **ebbinghaus_stats},
+                },
+            }
+        finally:
+            memory.close()
 
 
-def benchmark_cog():
-    """Benchmark B: CoG (Semantic Graph) availability and latency."""
-    from pathlib import Path
-
-    from hakua_memory.semantic_graph.store import SemanticGraphStore
-
-    start = time.time()
-    store = SemanticGraphStore(
-        Path("C:/Users/downl/.hermes/semantic-graph/semantic_graph.db")
-    )
-    elapsed = time.time() - start
-
-    return {
-        "method": "CoG",
-        "library": "hakua-memory",
-        "latency_ms": round(elapsed * 1000, 2),
-        "available": store is not None,
-    }
-
-
-def benchmark_ebbinghaus():
-    """Benchmark C: Ebbinghaus vocabulary and recall."""
-    from hakua_memory.ebbinghaus.models import JapaneseVocabulary
-
-    vocab = [c for c in dir(JapaneseVocabulary) if c.isupper() and not c.startswith("_")]
-
-    start = time.time()
-    _ = len(vocab)
-    elapsed = time.time() - start
-
-    return {
-        "method": "Ebbinghaus",
-        "library": "hakua-memory",
-        "vocab_count": len(vocab),
-        "latency_ms": round(elapsed * 1000, 2),
-    }
-
-
-def main():
-    """Run all benchmarks and print JSON results."""
-    results = {
-        "rag": benchmark_rag(),
-        "cog": benchmark_cog(),
-        "ebbinghaus": benchmark_ebbinghaus(),
-    }
-
-    # Compute statistics
-    latencies = [
-        results["rag"]["latency_ms"],
-        results["cog"]["latency_ms"] if results["cog"]["available"] else None,
-        results["ebbinghaus"]["latency_ms"],
-    ]
-    valid_latencies = [latency for latency in latencies if latency is not None]
-    mean_time = round(sum(valid_latencies) / len(valid_latencies), 2) if valid_latencies else None
-    median_time = round(sorted(valid_latencies)[len(valid_latencies) // 2], 2) if valid_latencies else None
-
-    results["statistics"] = {
-        "mean_latency_ms": mean_time,
-        "median_latency_ms": median_time,
-        "note": "All measurements on Windows 11, RTX 5060 Ti 16GB, Python 3.12",
-    }
-
-    print(json.dumps(results, ensure_ascii=False, indent=2))
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+    payload = run_benchmark(args)
+    serialized = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(serialized, encoding="utf-8")
+        LOGGER.info("Wrote benchmark results to %s", args.output)
+    sys.stdout.write(serialized)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

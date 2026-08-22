@@ -24,5 +24,12 @@ env/
 *.sqlite
 *.sqlite3
 .memory/
+/.memory_*/
 knowledge-base/
 wiki/
+
+# Generated benchmark and judge outputs
+/benchmark-results*.json
+/synthetic_*.json
+/contradiction_judge_*.json
+/hermes_judge_*.json

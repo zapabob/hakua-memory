@@ -1,0 +1,21 @@
+{
+  "dataset_id": "synthetic-business-v1",
+  "generator_version": "1",
+  "schema_version": "1",
+  "seed": 42,
+  "samples": 40,
+  "languages": ["Japanese", "English"],
+  "expected_summary": {
+    "entries": 40,
+    "japanese_entries": 20,
+    "english_entries": 20,
+    "domain_catalogue_size": 7
+  },
+  "benchmark_defaults": {
+    "warmup_count": 5,
+    "measurement_repetitions": 30,
+    "chunk_size": 100,
+    "chunk_overlap": 20,
+    "top_k": 5
+  }
+}
