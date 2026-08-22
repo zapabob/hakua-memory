@@ -104,7 +104,7 @@ class TestConfig:
             config = tomllib.load(f)
 
         assert config["project"]["name"] == "hakua-memory"
-        assert config["project"]["version"] == "0.2.0"
+        assert config["project"]["version"] == "0.3.3"
         assert "dev" in config["project"].get("optional-dependencies", {})
 
 

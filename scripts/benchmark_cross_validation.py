@@ -92,7 +92,7 @@ def main():
         results["cog"]["latency_ms"] if results["cog"]["available"] else None,
         results["ebbinghaus"]["latency_ms"],
     ]
-    valid_latencies = [l for l in latencies if l is not None]
+    valid_latencies = [latency for latency in latencies if latency is not None]
     mean_time = round(sum(valid_latencies) / len(valid_latencies), 2) if valid_latencies else None
     median_time = round(sorted(valid_latencies)[len(valid_latencies) // 2], 2) if valid_latencies else None
 

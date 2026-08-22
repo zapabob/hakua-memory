@@ -7,18 +7,15 @@ to perform actual LLM-based contradiction detection.
 import json
 import sys
 from pathlib import Path
-from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from hakua_memory import CompositeMemory
-from hakua_memory.ebbinghaus.store import EbbinghausMemoryStore
-from hakua_memory.semantic_graph.store import SemanticGraphStore
 
 
 class HermesLLMJudge:
     """Uses Hermes Agent's LLM providers for contradiction detection."""
-    
+
     def __init__(self, memory: CompositeMemory, model: str = "gpt-5.6-luna", provider: str = "openai-codex"):
         self.memory = memory
         self.model = model
@@ -26,7 +23,7 @@ class HermesLLMJudge:
         self.ebbinghaus_store = memory.ebbinghaus
         self.semantic_graph_store = memory.semantic
         self.rag_store = memory.documents
-    
+
     def extract_claims(self, query: str, top_k: int = 5) -> dict:
         """Extract claims from all three memory systems."""
         # Ebbinghaus
@@ -40,7 +37,7 @@ class HermesLLMJudge:
                     'confidence': r.get('confidence', 0.0),
                     'tags': r.get('tags', [])
                 })
-        
+
         # RAG
         rag_results = self.memory.search_documents(query, top_k=top_k)
         rag_claims = []
@@ -50,7 +47,7 @@ class HermesLLMJudge:
                 'document_title': r.get('document_title', ''),
                 'score': r.get('score', 0.0)
             })
-        
+
         # CoG
         cog_results = self.semantic_graph_store.search_nodes(query, top_k=top_k)
         cog_claims = []
@@ -61,13 +58,13 @@ class HermesLLMJudge:
                 'node_type': r.get('node_type', ''),
                 'confidence': r.get('confidence', 0.0)
             })
-        
+
         return {
             'ebbinghaus': ebbinghaus_claims,
             'rag': rag_claims,
             'cog': cog_claims
         }
-    
+
     def build_judge_prompt(self, query: str, claims: dict) -> str:
         """Build the prompt for LLM-as-Judge."""
         prompt = f"""以下の3つのメモリシステムから抽出された情報を比較し、矛盾があるか判定してください。
@@ -81,15 +78,15 @@ class HermesLLMJudge:
 """
         for i, c in enumerate(claims['ebbinghaus']):
             prompt += f"\n  {i+1}. {c['content'][:300]}... (salience: {c.get('salience', 0):.2f}, confidence: {c.get('confidence', 0):.2f})"
-        
+
         prompt += f"\n\n### 2. RAG文書検索 (外部知識・引用ベース)\n件数: {len(claims['rag'])}"
         for i, c in enumerate(claims['rag']):
             prompt += f"\n  {i+1}. {c['content'][:300]}... (doc: {c.get('document_title', 'N/A')}, score: {c.get('score', 0):.2f})"
-        
+
         prompt += f"\n\n### 3. CoG/セマンティックグラフ (構造化知識・関係性)\n件数: {len(claims['cog'])}"
         for i, c in enumerate(claims['cog']):
             prompt += f"\n  {i+1}. [{c.get('node_type', '')}] {c.get('label', '')}: {c['content'][:300]}... (confidence: {c.get('confidence', 0):.2f})"
-        
+
         prompt += """
 
 ---
@@ -121,7 +118,7 @@ class HermesLLMJudge:
 **重要**: JSONのみを出力してください。説明文は含めないでください。
 """
         return prompt
-    
+
     def judge_with_hermes(self, prompt: str) -> dict:
         """
         Call Hermes Agent's LLM for judgment.
@@ -134,16 +131,16 @@ class HermesLLMJudge:
             "provider": self.provider,
             "instruction": "上記プロンプトに基づき、JSONのみで矛盾判定結果を出力してください。"
         }
-    
+
     def detect_contradictions(self, queries: list[str]) -> list[dict]:
         """Detect contradictions for multiple queries using Hermes LLM."""
         results = []
-        
+
         for query in queries:
             claims = self.extract_claims(query)
             prompt = self.build_judge_prompt(query, claims)
             judge_request = self.judge_with_hermes(prompt)
-            
+
             results.append({
                 "query": query,
                 "judge_request": judge_request,
@@ -153,7 +150,7 @@ class HermesLLMJudge:
                     "cog_count": len(claims['cog'])
                 }
             })
-        
+
         return results
 
 
@@ -166,7 +163,7 @@ def run_hermes_judge_evaluation(memory: CompositeMemory, queries: list[str]) -> 
 if __name__ == "__main__":
     # Demo
     memory = CompositeMemory(Path(".memory_seed42"))
-    
+
     test_queries = [
         "キャッシュフロー分析",
         "マイクロサービスアーキテクチャ",
@@ -174,14 +171,14 @@ if __name__ == "__main__":
         "スマートファクトリー導入",
         "オムニチャネル戦略"
     ]
-    
+
     results = run_hermes_judge_evaluation(memory, test_queries)
-    
+
     # Save for Hermes Agent to process
     output_path = Path("hermes_judge_requests.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
-    
+
     print(f"Generated {len(results)} Hermes judge requests")
     print(f"Saved to: {output_path}")
     print("\nTo evaluate, run each prompt through Hermes Agent and save results to 'hermes_judge_results.json'")

@@ -5,17 +5,14 @@ to detect contradictions using an LLM judge.
 """
 
 import json
-from dataclasses import dataclass
-from typing import Any, Optional
-from pathlib import Path
 import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from hakua_memory import CompositeMemory
-from hakua_memory.ebbinghaus.store import EbbinghausMemoryStore
-from hakua_memory.semantic_graph.store import SemanticGraphStore
-from hakua_memory.rag.store import DocumentStore
 
 
 @dataclass
@@ -32,13 +29,13 @@ class ContradictionResult:
 
 class ContradictionDetector:
     """Detects contradictions across memory systems using LLM-as-Judge."""
-    
+
     def __init__(self, memory: CompositeMemory):
         self.memory = memory
         self.ebbinghaus_store = memory.ebbinghaus
         self.semantic_graph_store = memory.semantic
         self.rag_store = memory.documents
-    
+
     def extract_ebbinghaus_claims(self, query: str, top_k: int = 5) -> list[dict]:
         """Extract claims from Ebbinghaus memory."""
         results = self.ebbinghaus_store.recall(query, limit=top_k)
@@ -53,7 +50,7 @@ class ContradictionDetector:
                     'confidence': r.get('confidence', 0.0)
                 })
         return claims
-    
+
     def extract_rag_claims(self, query: str, top_k: int = 5) -> list[dict]:
         """Extract claims from RAG documents."""
         results = self.memory.search_documents(query, top_k=top_k)
@@ -67,7 +64,7 @@ class ContradictionDetector:
                 'score': r.get('score', 0.0)
             })
         return claims
-    
+
     def extract_cog_claims(self, query: str, top_k: int = 5) -> list[dict]:
         """Extract claims from Semantic Graph (CoG)."""
         results = self.semantic_graph_store.search_nodes(query, top_k=top_k)
@@ -82,8 +79,8 @@ class ContradictionDetector:
                 'status': r.get('status', '')
             })
         return claims
-    
-    def build_judge_prompt(self, query: str, ebbinghaus_claims: list[dict], 
+
+    def build_judge_prompt(self, query: str, ebbinghaus_claims: list[dict],
                            rag_claims: list[dict], cog_claims: list[dict]) -> str:
         """Build the prompt for LLM-as-Judge."""
         prompt = f"""以下の3つのメモリシステムから抽出された情報を比較し、矛盾があるか判定してください。
@@ -97,17 +94,17 @@ class ContradictionDetector:
 """
         for i, c in enumerate(ebbinghaus_claims):
             prompt += f"\n  {i+1}. {c['content'][:200]}... (salience: {c.get('salience', 0):.2f})"
-        
+
         prompt += "\n\n### 2. RAG文書検索 (外部知識・引用ベース)"
         prompt += f"\n件数: {len(rag_claims)}"
         for i, c in enumerate(rag_claims):
             prompt += f"\n  {i+1}. {c['content'][:200]}... (doc: {c.get('document_title', 'N/A')})"
-        
+
         prompt += "\n\n### 3. CoG/セマンティックグラフ (構造化知識・関係性)"
         prompt += f"\n件数: {len(cog_claims)}"
         for i, c in enumerate(cog_claims):
             prompt += f"\n  {i+1}. [{c.get('node_type', '')}] {c.get('label', '')}: {c['content'][:200]}... (confidence: {c.get('confidence', 0):.2f})"
-        
+
         prompt += """
 
 ---
@@ -130,7 +127,7 @@ class ContradictionDetector:
   "conflicting_sources": ["ebbinghaus", "rag", "cog"],
   "details": {
     "ebbinghaus": "該当内容",
-    "rag": "該当内容", 
+    "rag": "該当内容",
     "cog": "該当内容"
   }
 }
@@ -139,14 +136,14 @@ class ContradictionDetector:
 矛盾がない場合は has_contradiction: false とし、description に「矛盾なし」と記載してください。
 """
         return prompt
-    
+
     def detect_contradictions(self, query: str, top_k: int = 5) -> ContradictionResult:
         """Detect contradictions for a given query across all three systems."""
         # Extract claims from all three systems
         ebbinghaus_claims = self.extract_ebbinghaus_claims(query, top_k)
         rag_claims = self.extract_rag_claims(query, top_k)
         cog_claims = self.extract_cog_claims(query, top_k)
-        
+
         # If no claims from any system, return no contradiction
         if not ebbinghaus_claims and not rag_claims and not cog_claims:
             return ContradictionResult(
@@ -155,10 +152,10 @@ class ContradictionDetector:
                 confidence=1.0,
                 sources=[]
             )
-        
+
         # Build prompt for LLM judge
-        prompt = self.build_judge_prompt(query, ebbinghaus_claims, rag_claims, cog_claims)
-        
+        _ = self.build_judge_prompt(query, ebbinghaus_claims, rag_claims, cog_claims)
+
         # In a real implementation, this would call an LLM
         # For now, return a structured result that can be used with an LLM
         return ContradictionResult(
@@ -170,7 +167,7 @@ class ContradictionDetector:
             rag_content=json.dumps(rag_claims, ensure_ascii=False),
             cog_content=json.dumps(cog_claims, ensure_ascii=False)
         )
-    
+
     def get_judge_prompt(self, query: str, top_k: int = 5) -> str:
         """Get the prompt to feed to an LLM for contradiction detection."""
         ebbinghaus_claims = self.extract_ebbinghaus_claims(query, top_k)
@@ -183,7 +180,7 @@ def run_contradiction_check(memory: CompositeMemory, queries: list[str]) -> list
     """Run contradiction detection on multiple queries."""
     detector = ContradictionDetector(memory)
     results = []
-    
+
     for query in queries:
         prompt = detector.get_judge_prompt(query)
         result = {
@@ -194,14 +191,14 @@ def run_contradiction_check(memory: CompositeMemory, queries: list[str]) -> list
             "cog_count": len(detector.extract_cog_claims(query))
         }
         results.append(result)
-    
+
     return results
 
 
 if __name__ == "__main__":
     # Demo: Create a sample memory and test
     memory = CompositeMemory(Path(".memory_seed42"))
-    
+
     test_queries = [
         "キャッシュフロー分析",
         "マイクロサービスアーキテクチャ",
@@ -209,17 +206,17 @@ if __name__ == "__main__":
         "スマートファクトリー導入",
         "オムニチャネル戦略"
     ]
-    
+
     results = run_contradiction_check(memory, test_queries)
-    
+
     # Save prompts for LLM evaluation
     output_path = Path("contradiction_judge_prompts.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
-    
+
     print(f"Generated {len(results)} judge prompts")
     print(f"Saved to: {output_path}")
-    
+
     # Print first prompt as sample
     print("\n=== Sample Judge Prompt ===")
     print(results[0]["judge_prompt"][:1000] + "...")
