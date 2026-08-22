@@ -7,6 +7,9 @@ import json
 import uuid
 from typing import Any, Optional
 
+from .models import AUTHORITIES, EDGE_TYPES, NODE_TYPES, STATUSES, STRENGTH_LABELS
+from .sanitize import normalize_key, normalize_text, sanitize_metadata
+
 RATIONALE_REQUIRED = frozenset({"supports", "contradicts", "caused_by", "supersedes"})
 EVIDENCE_RELATIONS = frozenset({"supports", "contradicts", "mentions", "derived_from"})
 MAX_FRAGMENT_BYTES = 128 * 1024
@@ -107,8 +110,8 @@ def validate_fragment(
         authority = node.get("authority")
         if authority not in AUTHORITIES:
             errors.append(f"nodes[{i}].authority invalid: {authority}")
-        conf = _num(node.get("confidence"), "nodes[{i}].confidence", errors)
-        sal = _num(node.get("salience"), "nodes[{i}].salience", errors)
+        _num(node.get("confidence"), "nodes[{i}].confidence", errors)
+        _num(node.get("salience"), "nodes[{i}].salience", errors)
         label = normalize_text(str(node.get("label") or ""))
         if not label or len(label) > 500:
             errors.append(f"nodes[{i}].label invalid")

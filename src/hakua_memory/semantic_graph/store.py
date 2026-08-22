@@ -17,7 +17,6 @@ from typing import Any, Iterator, Optional
 from .embedding.base import EmbeddingModelIdentity
 from .embedding.vectors import (
     FLOAT32_LE_DTYPE,
-    EmbeddingVectorError,
     cosine_similarity,
     l2_normalize,
     pack_float32_le,

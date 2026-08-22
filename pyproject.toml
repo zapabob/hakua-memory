@@ -7,7 +7,7 @@ name = "hakua-memory"
 version = "0.3.3"
 description = "Composite memory library: Ebbinghaus + Semantic Graph + RAG + Obsidian Wiki"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 requires-python = ">=3.11,<3.14"
 authors = [{name = "Hakua"}]
 dependencies = ["pyyaml>=6"]
@@ -21,7 +21,13 @@ rag = [
   "python-pptx>=1,<2",
 ]
 dev = ["pytest>=8", "ruff"]
-all = ["pyyaml>=6"]
+all = [
+  "gitpython>=3,<4",
+  "llama-cpp-python>=0.3,<1",
+  "pypdf>=4,<5",
+  "python-docx>=1,<2",
+  "python-pptx>=1,<2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -33,8 +39,3 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
-
-[tool.ruff.lint.per-file-ignores]
-"scripts/*.py" = ["E402"]
-"src/hakua_memory/semantic_graph/**/*.py" = ["F821", "F841", "F401", "E402"]
-"src/hakua_memory/ebbinghaus/**/*.py" = ["F821", "F841", "F401", "E402"]

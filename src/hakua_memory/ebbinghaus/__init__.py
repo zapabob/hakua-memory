@@ -30,6 +30,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def tool_error(message: str) -> str:
+    return json.dumps({"error": str(message)}, ensure_ascii=False)
+
 __all__ = [
     "CapacityError",
     "EbbinghausMemoryProvider",

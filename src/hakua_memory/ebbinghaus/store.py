@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from .experience import EbbinghausExperienceLedger, normalize_query_hash
-from .models import RecallAttemptResult, RetrievalOutcome
+from .models import RecallAttemptResult, RetrievalOutcome, RevisionResult
 from .policies import EbbinghausPolicies, is_protected, resolve_prune_mode
 
 logger = logging.getLogger(__name__)
@@ -1676,7 +1676,6 @@ class EbbinghausMemoryStore:
         max_negative_sleep_rehearsals: int | None = None,
     ) -> dict:
         sp = self.policies.sleep
-        cp = self.policies.capacity
 
         rehearse_threshold = _clamp(
             float(sp.rehearse_threshold if rehearse_threshold is None else rehearse_threshold),
