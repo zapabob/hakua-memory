@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from pathlib import Path
 
 from hakua_memory.composite import CompositeMemory
 
 
-def test_fake_embedding_search() -> None:
+def test_fake_embedding_search(tmp_path: Path) -> None:
     """Test search with deterministic fake embedding backend."""
     from hakua_memory.semantic_graph.embedding.base import EmbeddingModelIdentity
     from hakua_memory.semantic_graph.embedding.fake import DeterministicFakeEmbeddingBackend
 
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         # Add some nodes
         cm.add_node({
@@ -59,19 +56,17 @@ def test_fake_embedding_search() -> None:
         print(f"[fake embedding] {len(results)} results")
         for r in results:
             print(f"  - {r.get('label', r.get('node_id', 'unknown'))}")
-        assert len(results) >= 0  # Always passes (fallback safe)
+        assert results
         print("✅ Fake embedding search: PASSED")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_search_without_embedding() -> None:
+def test_search_without_embedding(tmp_path: Path) -> None:
     """Test search without any embedding backend (lexical only)."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         cm.add_node({
             "node_id": "claim-3",
@@ -79,18 +74,17 @@ def test_search_without_embedding() -> None:
             "label": "Test claim",
             "summary": "This is a test claim for embedding-free search.",
             "status": "asserted",
-            "confidence": 0.5,
+            "confidence": 0.7,
             "salience": 0.5,
         })
 
         # Search without backend (lexical fallback)
         results = cm.search("test claim", top_k=5)
         print(f"[no embedding] {len(results)} results")
-        assert len(results) >= 0  # Always passes
+        assert results
         print("✅ Embedding-free search: PASSED")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_llama_cpp_availability() -> None:
@@ -102,10 +96,3 @@ def test_llama_cpp_availability() -> None:
     except ImportError as e:
         print(f"⚠️ llama-cpp-python not available: {e}")
         print("   (This is OK - fake backend will be used)")
-
-
-if __name__ == "__main__":
-    test_llama_cpp_availability()
-    test_fake_embedding_search()
-    test_search_without_embedding()
-    print("\n★ ALL EMBEDDING TESTS PASSED ★")

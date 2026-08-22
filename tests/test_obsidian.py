@@ -88,12 +88,3 @@ def test_forgetting_curve_mermaid() -> None:
     assert "1, 2, 6, 12, 24" in result
     assert "0.95" in result
     print("✅ Forgetting curve Mermaid: PASSED")
-
-
-if __name__ == "__main__":
-    test_default_templates()
-    test_sleep_log_template()
-    test_graph_template()
-    test_mermaid_graph_generation()
-    test_forgetting_curve_mermaid()
-    print("\n★ ALL OBSIDIAN TEMPLATE TESTS PASSED ★")

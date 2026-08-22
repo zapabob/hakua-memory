@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from pathlib import Path
 
 from hakua_memory.composite import CompositeMemory
 from hakua_memory.rag.models import AclCheckResult, AclEntry
 
 
-def test_acl_three_levels() -> None:
+def test_acl_three_levels(tmp_path: Path) -> None:
     """Test read/write/delete ACL separation."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         # Ingest a document
         result = cm.ingest_markdown(
@@ -48,15 +45,13 @@ def test_acl_three_levels() -> None:
         print("✅ ACL 3-level separation: PASSED")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_acl_revoke() -> None:
+def test_acl_revoke(tmp_path: Path) -> None:
     """Test ACL revocation."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         result = cm.ingest_markdown("# Test\nContent", title="Revoke Test")
         doc_id = result["document_id"]
@@ -73,7 +68,6 @@ def test_acl_revoke() -> None:
         print("✅ ACL revocation: PASSED")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def test_acl_validation() -> None:
@@ -122,12 +116,11 @@ def test_acl_check_result() -> None:
     print("✅ AclCheckResult helpers: PASSED")
 
 
-def test_acl_department() -> None:
+def test_acl_department(tmp_path: Path) -> None:
     """Test department-scoped ACL."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         result = cm.ingest_markdown("# Test\nContent", title="Dept Test")
         doc_id = result["document_id"]
@@ -140,13 +133,3 @@ def test_acl_department() -> None:
         print("✅ Department ACL: PASSED")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-if __name__ == "__main__":
-    test_acl_validation()
-    test_acl_check_result()
-    test_acl_three_levels()
-    test_acl_revoke()
-    test_acl_department()
-    print("\n★ ALL ACL TESTS PASSED ★")

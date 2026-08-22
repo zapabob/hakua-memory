@@ -5,20 +5,17 @@ Tests all modules WITHOUT embedding backend (lexical/fake only).
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from pathlib import Path
 
 from hakua_memory.composite import CompositeMemory
 from hakua_memory.config import HakuaMemoryConfig
 
 
-def test_ebbinghaus_without_embedding() -> None:
+def test_ebbinghaus_without_embedding(tmp_path: Path) -> None:
     """Test Ebbinghaus memory remember/recall."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         # Remember
         cm.remember("User prefers concise Japanese reports.", tags=["user-pref"])
@@ -30,15 +27,13 @@ def test_ebbinghaus_without_embedding() -> None:
         print(f"✅ Ebbinghaus recall: {len(results)} results")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_semantic_graph_without_embedding() -> None:
+def test_semantic_graph_without_embedding(tmp_path: Path) -> None:
     """Test Semantic Graph add_node/search."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         # Add nodes
         cm.add_node({
@@ -66,15 +61,13 @@ def test_semantic_graph_without_embedding() -> None:
         print(f"✅ Semantic graph search: {len(results)} results")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_rag_without_embedding() -> None:
+def test_rag_without_embedding(tmp_path: Path) -> None:
     """Test RAG ingest/search/citations without embedding."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         # Ingest markdown
         result = cm.ingest_markdown(
@@ -107,23 +100,18 @@ def test_rag_without_embedding() -> None:
         print(f"✅ RAG: {len(results)} search, {len(items)} items, ACL ok")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def test_config_save_load() -> None:
+def test_config_save_load(tmp_path: Path) -> None:
     """Test config YAML save/load."""
-    tmpdir = tempfile.mkdtemp()
-    try:
-        config = HakuaMemoryConfig()
-        path = Path(tmpdir) / "config.yaml"
-        config.to_yaml(path)
+    config = HakuaMemoryConfig()
+    path = tmp_path / "config.yaml"
+    config.to_yaml(path)
 
-        loaded = HakuaMemoryConfig.from_yaml(path)
-        assert loaded.embedding.backend == "fake"
-        assert loaded.rag.chunk_size == 1000
-        print("✅ Config save/load: PASSED")
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    loaded = HakuaMemoryConfig.from_yaml(path)
+    assert loaded.embedding.backend == "fake"
+    assert loaded.rag.chunk_size == 1000
+    print("✅ Config save/load: PASSED")
 
 
 def test_obsidian_templates() -> None:
@@ -156,12 +144,11 @@ def test_obsidian_templates() -> None:
     print("✅ Obsidian templates: PASSED")
 
 
-def test_stats() -> None:
+def test_stats(tmp_path: Path) -> None:
     """Test stats aggregation."""
-    tmpdir = tempfile.mkdtemp()
+    root = tmp_path / "test"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test"
-        cm = CompositeMemory(root)
 
         cm.remember("Test memory", tags=["test"])
         cm.add_node({
@@ -182,14 +169,3 @@ def test_stats() -> None:
         print(f"✅ Stats: ebbinghaus={stats['ebbinghaus']['count']}, rag={stats['rag']['documents']}")
     finally:
         cm.close()
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-if __name__ == "__main__":
-    test_ebbinghaus_without_embedding()
-    test_semantic_graph_without_embedding()
-    test_rag_without_embedding()
-    test_config_save_load()
-    test_obsidian_templates()
-    test_stats()
-    print("\n★ ALL COMPREHENSIVE TESTS PASSED ★")

@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 from hakua_memory.composite import CompositeMemory
 
 
-def test_rag_e2e() -> None:
-    tmpdir = tempfile.mkdtemp()
+def test_rag_e2e(tmp_path: Path) -> None:
+    root = tmp_path / "test_composite"
+    cm = CompositeMemory(root)
     try:
-        root = Path(tmpdir) / "test_composite"
-        cm = CompositeMemory(root)
 
         # ── 1. Ingest a meeting document (markdown string) ──────────
         meeting_md = """
@@ -63,6 +61,7 @@ def test_rag_e2e() -> None:
             department="Product",
         )
         print(f"[ingest2] {result2}")
+        assert result2["chunks"] > 0
 
         # ── 3. Search documents ──────────────────────────────────────
         results = cm.search_documents("リリース", top_k=5)
@@ -117,12 +116,5 @@ def test_rag_e2e() -> None:
 
         print("\n★ ALL RAG E2E TESTS PASSED ★")
     finally:
-        # Close the ebbinghaus connection before cleanup (Windows file lock)
         cm.close()
-        import shutil
-        shutil.rmtree(tmpdir, ignore_errors=True)
         print("★ TEST COMPLETE ★")
-
-
-if __name__ == "__main__":
-    test_rag_e2e()

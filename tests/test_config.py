@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import tempfile
+import tomllib
 from pathlib import Path
 
 from hakua_memory.config import (
@@ -22,21 +22,18 @@ def test_default_config() -> None:
     print("✅ Default config: PASSED")
 
 
-def test_config_to_yaml() -> None:
+def test_config_to_yaml(tmp_path: Path) -> None:
     """Test config serialization to YAML."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config = HakuaMemoryConfig()
-        path = Path(tmpdir) / "config.yaml"
-        config.to_yaml(path)
+    config = HakuaMemoryConfig()
+    path = tmp_path / "config.yaml"
+    config.to_yaml(path)
 
-        # Verify file was created
-        assert path.exists()
+    assert path.exists()
 
-        # Load back
-        loaded = HakuaMemoryConfig.from_yaml(path)
-        assert loaded.embedding.backend == "fake"
-        assert loaded.embedding.dimensions == 1024
-        print("✅ Config to YAML: PASSED")
+    loaded = HakuaMemoryConfig.from_yaml(path)
+    assert loaded.embedding.backend == "fake"
+    assert loaded.embedding.dimensions == 1024
+    print("✅ Config to YAML: PASSED")
 
 
 def test_config_from_dict() -> None:
@@ -91,18 +88,25 @@ def test_config_validation() -> None:
     print("✅ Config validation: PASSED")
 
 
-def test_load_default_config() -> None:
+def test_load_default_config(tmp_path: Path) -> None:
     """Test loading default config (non-existent file returns defaults)."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config = load_config(Path(tmpdir) / "nonexistent.yaml")
-        assert config.embedding.backend == "fake"
-        print("✅ Load default config: PASSED")
+    config = load_config(tmp_path / "nonexistent.yaml")
+    assert config.embedding.backend == "fake"
+    print("✅ Load default config: PASSED")
 
 
-if __name__ == "__main__":
-    test_default_config()
-    test_config_to_yaml()
-    test_config_from_dict()
-    test_config_validation()
-    test_load_default_config()
-    print("\n★ ALL CONFIG TESTS PASSED ★")
+def test_project_metadata() -> None:
+    root = Path(__file__).resolve().parents[1]
+    with (root / "pyproject.toml").open("rb") as stream:
+        project = tomllib.load(stream)["project"]
+
+    assert project["name"] == "hakua-memory"
+    assert project["version"] == "0.3.3"
+    assert project["requires-python"] == ">=3.11,<3.14"
+    assert set(project["optional-dependencies"]["all"]) == {
+        "gitpython>=3,<4",
+        "llama-cpp-python>=0.3,<1",
+        "pypdf>=4,<5",
+        "python-docx>=1,<2",
+        "python-pptx>=1,<2",
+    }
