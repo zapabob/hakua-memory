@@ -8,16 +8,8 @@
 pip install hakua-memory
 ```
 
-That's it. Python 3.11–3.13 supported.
-
-Optional extras:
-
-```bash
-pip install "hakua-memory[rag]"        # PDF/DOCX/PPTX ingestion
-pip install "hakua-memory[embedding]"  # llama.cpp embeddings
-pip install "hakua-memory[obsidian]"   # Obsidian helpers
-pip install "hakua-memory[all]"         # all optional integrations
-```
+Python 3.11–3.13 are supported. Optional integrations are listed in the
+Installation section below.
 
 ## Overview
 
@@ -90,13 +82,16 @@ pip install "hakua-memory[obsidian]"   # Obsidian helpers
 pip install "hakua-memory[all]"         # all optional integrations
 ```
 
+The `all` extra is the union of the `obsidian`, `embedding`, and `rag` integration
+dependencies. `pyyaml` is installed by the base package.
+
 ## Quick start
 
 ```python
 from pathlib import Path
 from hakua_memory import CompositeMemory
 
-memory = CompositeMemory(Path(".memory"))
+memory = CompositeMemory(Path("~/.hakua-memory").expanduser())
 
 memory.remember(
     "The user prefers concise, verifiable reports.",
@@ -120,20 +115,13 @@ memory.add_node(
     }
 )
 
-# Add edges between nodes
-memory.semantic.upsert_edge({
-    "edge_id": "edge-1",
-    "source_node_id": "claim-1",
-    "target_node_id": "claim-2",
-    "edge_type": "supports",
-    "label": "支持",
-    "confidence": 0.8,
-    "evidence": [],
-})
+results = memory.search("Verifiable reporting")
+print(results)
 
 print(memory.stats())
 memory.sleep()
-memory.export_wiki(Path("knowledge-base"))
+memory.export_wiki(Path("~/.hakua-memory/wiki").expanduser())
+memory.close()
 ```
 
 ## RAG Quick start
@@ -142,40 +130,28 @@ memory.export_wiki(Path("knowledge-base"))
 from pathlib import Path
 from hakua_memory import CompositeMemory
 
-memory = CompositeMemory(Path(".memory"))
-
-# Ingest a PDF document
-result = memory.ingest_document(
-    Path("meeting_notes.pdf"),
+memory = CompositeMemory(Path("~/.hakua-memory").expanduser())
+result = memory.ingest_text(
+    "Decision: the release schedule is Friday. Task: Alice will confirm the schedule.",
     title="Q3 Planning Meeting",
     author="Alice",
     department="Product",
 )
-print(result)  # {'document_id': '...', 'title': '...', 'chunks': 12, ...}
+print(result)
 
-# Search with citation tracking
 results = memory.search_documents("release schedule", top_k=5)
-for r in results:
-    print(f"[{r['rank']}] {r['document_title']} (p.{r.get('page_number')})")
-    print(f"    {r['content'][:100]}...")
-
-# Render citation context for RAG answers
 context = memory.render_citations(results, format="markdown")
 print(context)
 
-# Extract meeting items (decisions, tasks, action items)
-items = memory.extract_meeting_items(results[0]["document_id"])
+items = memory.extract_meeting_items(result["document_id"])
 for item in items:
     print(f"[{item['item_type']}] {item['content']}")
 
-# Grant ACL access and search with filtering
-memory.grant_access(results[0]["document_id"], "alice", "read")
+memory.grant_access(result["document_id"], "alice", "read")
 alice_results = memory.search_documents("schedule", principal="alice")
-
-# Detect contradictions between documents
-contradictions = memory.detect_contradictions(min_confidence=0.6)
-for c in contradictions:
-    print(f"[{c['type']}] {c['description']}")
+print(alice_results)
+print(memory.detect_contradictions(min_confidence=0.6))
+memory.close()
 ```
 
 ## Cross-source Contradiction Detection (LLM-as-Judge)
@@ -185,7 +161,7 @@ from pathlib import Path
 from hakua_memory import CompositeMemory
 from scripts.contradiction_detector import ContradictionDetector
 
-memory = CompositeMemory(Path(".memory"))
+memory = CompositeMemory(Path("~/.hakua-memory").expanduser())
 detector = ContradictionDetector(memory)
 
 # Detect contradictions across all three memory systems
@@ -246,12 +222,12 @@ results = memory.search("Verifiable reporting", backend=backend)
 
 The retrieval layer validates vector dimensions, records the embedding namespace, and combines lexical and dense rankings without silently mixing incompatible representations.
 
-## Performance Comparison
+## Performance comparison
 
-### Internal reproducible benchmarks
+### Internal reproducible measurements
 
-Run the existing RAG chunking, semantic-graph lexical retrieval, and Ebbinghaus recall
-operations with the same deterministic dataset and query configuration:
+Run the RAG chunking, semantic-graph lexical retrieval, and Ebbinghaus recall
+operations with one deterministic dataset and query configuration:
 
 ```bash
 python scripts/generate_synthetic_data.py \
@@ -266,23 +242,57 @@ python scripts/benchmark_cross_validation.py \
   --output benchmark-results.json
 ```
 
-The benchmark output is machine-readable JSON containing the package version, commit
-SHA, timestamp, operating system, Python version, CPU, dataset id, seed, sample count,
-warmup count, repetition count, and mean, median, standard deviation, p50, p95, and p99
-latency for each measured operation. The benchmark does not use a GPU, so no GPU value
-is emitted. Generated JSON, SQLite state, and temporary benchmark databases are not
-version-controlled; `benchmarks/synthetic_dataset_config.json` records the recipe and
-expected dataset summary.
+The benchmark output is machine-readable JSON containing package version, commit SHA,
+timestamp, operating system, Python version, CPU, dataset id, seed, sample count, warmup
+count, repetition count, and mean, median, standard deviation, p50, p95, and p99 latency
+for every measured operation. No GPU is used by this harness. Generated JSON, SQLite
+state, and temporary benchmark databases are not version-controlled;
+`benchmarks/synthetic_dataset_config.json` records the dataset recipe and expected
+summary.
 
 Only measurements produced by this repository's harness should be described as internal
-results. This README intentionally does not publish fixed latency or accuracy numbers;
-those values depend on the recorded machine, dataset, seed, warmup, and repetitions.
+results. Values depend on the recorded machine, dataset, seed, warmup, and repetitions.
+
+### Cross-library validation on the same hardware
+
+The optional comparison harness uses the same corpus, query set, warmup count, repetition
+count, and randomized variant order for every paired measurement. It compares RAG
+chunking with LangChain's `RecursiveCharacterTextSplitter` and LlamaIndex's
+`SentenceSplitter`, and compares the Semantic Graph lexical query path with
+`rank-bm25`'s `BM25Okapi`. The comparison is limited to those operations; it is not a
+claim about complete RAG quality, end-to-end agent latency, memory use, or GPU speed.
+
+Create a separate environment and run the comparison as follows:
+
+```bash
+python -m venv .venv-benchmark
+# Activate .venv-benchmark for your shell, then run:
+python -m pip install -e .
+python -m pip install -r benchmarks/requirements.txt
+python scripts/generate_synthetic_data.py --seed 42 --samples 40 --output synthetic_business_dataset.json
+python scripts/benchmark_external_libraries.py --seed 42 --samples 40 --warmup 5 --repetitions 30 --output benchmark-results-external.json --plot benchmark-errorbars.png
+```
+
+The comparison JSON records exact library versions, host metadata, configurations, raw
+paired durations, mean, median, standard deviation, p50, p95, p99, and a 95% confidence
+interval for each variant. It also records the two-sided paired Wilcoxon signed-rank
+test, paired t-test sensitivity result, and Holm-adjusted Wilcoxon p-value across the
+three comparisons. The PNG uses mean latency with 95% confidence-interval error bars.
+The validation section separately records non-empty chunk output and expected top-k hit
+rate, so latency and retrieval-result checks are not conflated.
+
+The chunkers use their native length units, which are recorded in the JSON; equal numeric
+chunk-size arguments therefore do not mean equal chunk boundaries. The lexical comparison
+also compares SQLite-backed graph search with an in-memory BM25 index. These scope limits
+are required for an honest cross-library measurement.
 
 ### External references
 
-LangChain, LlamaIndex, PyTorch Geometric, NetworkX, and FAISS are relevant external
-references. They are not run by this harness, so no direct latency, accuracy, or memory
-comparison is claimed here.
+The measured comparison uses [LangChain Text Splitters](https://docs.langchain.com/oss/python/integrations/splitters/recursive_text_splitter),
+[LlamaIndex SentenceSplitter](https://docs.llamaindex.ai/en/stable/module_guides/loading/node_parsers/modules.html),
+and [rank-bm25](https://pypi.org/project/rank-bm25/), with versions pinned in
+`benchmarks/requirements.txt`. NetworkX, PyTorch Geometric, and FAISS remain external
+references only; this repository does not publish direct measurements for them.
 
 ## Reproducible synthetic data
 

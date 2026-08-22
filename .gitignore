@@ -30,6 +30,8 @@ wiki/
 
 # Generated benchmark and judge outputs
 /benchmark-results*.json
+/benchmark-errorbars*.png
+/benchmark-errorbars*.svg
 /synthetic_*.json
 /contradiction_judge_*.json
 /hermes_judge_*.json

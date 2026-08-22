@@ -101,7 +101,7 @@ def test_project_metadata() -> None:
         project = tomllib.load(stream)["project"]
 
     assert project["name"] == "hakua-memory"
-    assert project["version"] == "0.3.3"
+    assert project["version"] == "0.3.4"
     assert project["requires-python"] == ">=3.11,<3.14"
     assert set(project["optional-dependencies"]["all"]) == {
         "gitpython>=3,<4",

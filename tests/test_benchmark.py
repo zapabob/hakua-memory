@@ -33,7 +33,7 @@ def test_benchmark_emits_reproducible_schema(tmp_path: Path) -> None:
     )
     payload = json.loads(output.read_text(encoding="utf-8"))
     metadata = payload["metadata"]
-    assert metadata["hakua_memory_version"] == "0.3.3"
+    assert metadata["hakua_memory_version"] == "0.3.4"
     assert len(metadata["git_commit_sha"]) == 40
     assert metadata["seed"] == 42
     assert metadata["number_of_samples"] == 8
