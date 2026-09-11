@@ -129,8 +129,8 @@ def _require_external_libraries() -> dict[str, Any]:
     except ModuleNotFoundError:
         missing.append("langchain-text-splitters")
     try:
-        from langchain_core.documents import Document as LCDocument
         from langchain_community.retrievers import BM25Retriever as LangChainBM25Retriever
+        from langchain_core.documents import Document as LCDocument
 
         loaded["LCDocument"] = LCDocument
         loaded["LangChainBM25Retriever"] = LangChainBM25Retriever

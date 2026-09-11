@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 from hakua_memory.ebbinghaus.store import EbbinghausMemoryStore
 from hakua_memory.obsidian import write_diary
@@ -15,7 +15,6 @@ from hakua_memory.semantic_graph.retrieval import (
 from hakua_memory.semantic_graph.store import SemanticGraphStore
 
 if TYPE_CHECKING:
-    from hakua_memory.rag.models import AclEntry
     from hakua_memory.rag.retrieval import RagResult
     from hakua_memory.rag.store import DocumentStore
 
