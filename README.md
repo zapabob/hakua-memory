@@ -96,6 +96,8 @@ memory = CompositeMemory(Path("~/.hakua-memory").expanduser())
 memory.remember(
     "The user prefers concise, verifiable reports.",
     tags=["user-preference", "communication"],
+    salience=0.9,
+    valence=0.2,
 )
 
 matches = memory.recall("verifiable reports")
@@ -258,68 +260,132 @@ results. Values depend on the recorded machine, dataset, seed, warmup, and repet
 The optional comparison harness uses the same corpus, query set, warmup count, repetition
 count, and randomized variant order for every paired measurement. It compares RAG
 chunking with LangChain's `RecursiveCharacterTextSplitter` and LlamaIndex's
-`SentenceSplitter`, and compares the Semantic Graph lexical query path with
-`rank-bm25`'s `BM25Okapi`. The comparison is limited to those operations; it is not a
-claim about complete RAG quality, end-to-end agent latency, memory use, or GPU speed.
+`SentenceSplitter`, and compares CoG/retrieval peers across hakua lexical search,
+hakua hybrid GGUF search, `rank-bm25`, LangChain BM25, LlamaIndex BM25, and
+FAISS+same-GGUF dense retrieval. Multi-group Friedman tests and all-pairs
+Wilcoxon/Holm corrections are recorded. This is not a claim about complete RAG quality,
+end-to-end agent latency, memory use, or general library superiority.
 
 Create a separate environment and run the comparison as follows:
 
 ```bash
 python -m venv .venv-benchmark
 # Activate .venv-benchmark for your shell, then run:
-python -m pip install -e .
+python -m pip install -e ".[embedding]"
 python -m pip install -r benchmarks/requirements.txt
 python scripts/generate_synthetic_data.py --seed 42 --samples 40 --output synthetic_business_dataset.json
-python scripts/benchmark_external_libraries.py --seed 42 --samples 40 --warmup 5 --repetitions 30 --output benchmark-results-external.json --plot benchmark-errorbars.png
+python scripts/benchmark_external_libraries.py --seed 42 --samples 40 --warmup 2 --repetitions 10 --output benchmark-results-external.json --plot benchmark-errorbars.png
+python scripts/benchmark_speculative_hybrid.py --samples 30 --warmup 1 --repetitions 8 --output speculative-hybrid-3group.json --plot speculative-hybrid-3group.png
 ```
 
 The comparison JSON records exact library versions, host metadata, configurations, raw
 paired durations, mean, median, standard deviation, p50, p95, p99, and a 95% confidence
-interval for each variant. It also records the two-sided paired Wilcoxon signed-rank
-test, paired t-test sensitivity result, and Holm-adjusted Wilcoxon p-value across the
-three comparisons. The PNG uses mean latency with 95% confidence-interval error bars.
-The validation section separately records non-empty chunk output and expected top-k hit
-rate, so latency and retrieval-result checks are not conflated.
+interval for each variant. It also records Friedman chi-square multi-group tests,
+two-sided paired Wilcoxon signed-rank tests, paired t-test sensitivity, and Holm-adjusted
+Wilcoxon p-values across all pairwise comparisons. The PNG uses mean latency with 95%
+confidence-interval error bars. The validation section separately records non-empty chunk
+output and expected top-k hit rate, so latency and retrieval-result checks are not
+conflated.
 
 The chunkers use their native length units, which are recorded in the JSON; equal numeric
-chunk-size arguments therefore do not mean equal chunk boundaries. The lexical comparison
-also compares SQLite-backed graph search with an in-memory BM25 index. These scope limits
-are required for an honest cross-library measurement.
+chunk-size arguments therefore do not mean equal chunk boundaries. Lexical peers compare
+SQLite-backed graph search with in-memory BM25 indexes. Dense peers use the same local
+GGUF embedding model (`nsfw-bge-m3-v5-q6_k`, 1024-d) via `llama-cpp-python`. These scope
+limits are required for an honest cross-library measurement.
 
-The following is one recorded run from commit `e2bbb3c8bfd3bbfcd7a5e508a757917919dd5e89`
-on Windows 11 with Python 3.12.13 and an AMD64 Family 23 Model 96 CPU. It used
-`synthetic-business-v1`, seed 42, 40 samples, 40 queries, warmup 5, and 30 paired
-repetitions. Latencies are milliseconds per operation; the confidence interval is 95% CI
-for the mean.
+The following is one recorded 0.3.5 run from commit `62c8c6054bae` on Windows 11 with
+Python 3.12.10, an AMD64 Family 23 Model 96 CPU, and CUDA via `llama-cpp` (`n_gpu_layers=-1`).
+It used `synthetic-business-v1`, seed 42, 40 samples / 40 queries, warmup 2, and 10 paired
+repetitions. Latencies are milliseconds; CoG rows are milliseconds per complete 40-query
+batch. The confidence interval is the 95% CI for the mean.
 
 | Operation | Variant | Mean | Median | Stdev | P95 | 95% CI |
 |---|---|---:|---:|---:|---:|---:|
-| RAG chunking | hakua-memory | 0.6312 | 0.5901 | 0.1184 | 0.8746 | 0.5870–0.6754 |
-| RAG chunking | LangChain Text Splitters 1.1.2 | 0.0694 | 0.0681 | 0.0144 | 0.0854 | 0.0640–0.0747 |
-| RAG chunking | LlamaIndex Core 0.14.24 | 1.8174 | 1.6806 | 0.3354 | 2.4531 | 1.6921–1.9426 |
-| Lexical retrieval, 40-query batch | hakua-memory | 264.2875 | 155.3723 | 487.9654 | 397.6564 | 82.0782–446.4968 |
-| Lexical retrieval, 40-query batch | rank-bm25 0.2.2 | 2.5974 | 2.4707 | 0.3772 | 3.0580 | 2.4566–2.7382 |
+| RAG chunking | hakua-memory | 1.0630 | 1.0358 | 0.1563 | 1.3290 | 0.9513–1.1748 |
+| RAG chunking | LangChain Text Splitters | 0.1130 | 0.1185 | 0.0168 | 0.1329 | 0.1009–0.1250 |
+| RAG chunking | LlamaIndex Core | 2.2198 | 2.1212 | 0.3185 | 2.6825 | 1.9919–2.4477 |
+| CoG retrieval batch | hakua lexical | 45.5863 | 47.3555 | 7.6094 | 56.0006 | 40.1429–51.0297 |
+| CoG retrieval batch | rank-bm25 | 4.2935 | 3.6322 | 2.2569 | 7.9821 | 2.6790–5.9080 |
+| CoG retrieval batch | LangChain BM25 | 6.5765 | 5.6572 | 2.8180 | 11.2159 | 4.5606–8.5924 |
+| CoG retrieval batch | LlamaIndex BM25 | 40.3695 | 39.8424 | 10.2176 | 52.1031 | 33.0602–47.6787 |
+| CoG retrieval batch | hakua hybrid GGUF | 31519.2576 | 25784.8628 | 13763.0641 | 57242.3898 | 21673.7546–41364.7606 |
+| CoG retrieval batch | FAISS + same GGUF | 16617.3399 | 14470.4271 | 9264.0809 | 31038.2213 | 9990.2156–23244.4642 |
 
-The paired two-sided Wilcoxon signed-rank p-values were `1.862645149e-09` for each
-comparison. Holm-adjusted values across the three comparisons were `5.587935448e-09`
-for each comparison. Paired t-test sensitivity p-values were `1.387202830e-21` for
-LangChain, `4.399465113e-19` for LlamaIndex, and `0.006427546` for rank-bm25. These
-p-values describe this paired latency sample only; they are not accuracy claims or proof
-of general library superiority.
+#### Multi-group Friedman p-values
 
-The dataset-specific validation found non-empty chunk output for all variants. The
-expected exact-record hit rate at top-k=5 was 33/40 (82.5%) for hakua-memory and 38/40
-(95.0%) for rank-bm25. This is a small synthetic query-set check, not a benchmark of
-retrieval quality across domains. The generated JSON and error-bar PNG are intentionally
-kept outside Git; rerun the command above to reproduce them on another machine.
+| Operation | Groups (n) | Friedman χ² | p-value | Reject H₀ (α=0.05) |
+|---|---|---:|---:|---|
+| RAG chunking | 3 | 20.0 | 4.540e-05 | yes |
+| CoG retrieval batch | 6 | 47.6 | 4.286e-09 | yes |
+
+#### Pairwise Wilcoxon / Holm / paired-t p-values (RAG chunking)
+
+| Primary | Comparator | Wilcoxon p | Holm-adjusted Wilcoxon p | Paired-t p |
+|---|---|---:|---:|---:|
+| hakua-memory | LangChain Text Splitters | 0.001953 | 0.035156 | 1.366e-08 |
+| hakua-memory | LlamaIndex Core | 0.001953 | 0.035156 | 3.434e-06 |
+| LangChain Text Splitters | LlamaIndex Core | 0.001953 | 0.035156 | 7.409e-09 |
+
+#### Pairwise Wilcoxon / Holm / paired-t p-values (CoG retrieval batch)
+
+| Primary | Comparator | Wilcoxon p | Holm-adjusted Wilcoxon p | Paired-t p |
+|---|---|---:|---:|---:|
+| hakua lexical | rank-bm25 | 0.001953 | 0.035156 | 2.450e-08 |
+| hakua lexical | LangChain BM25 | 0.001953 | 0.035156 | 4.766e-08 |
+| hakua lexical | LlamaIndex BM25 | 0.193359 | 0.193359 | 0.137301 |
+| hakua lexical | hakua hybrid GGUF | 0.001953 | 0.035156 | 4.913e-05 |
+| hakua lexical | FAISS + same GGUF | 0.001953 | 0.035156 | 0.000310 |
+| rank-bm25 | LangChain BM25 | 0.005859 | 0.035156 | 0.001648 |
+| rank-bm25 | LlamaIndex BM25 | 0.001953 | 0.035156 | 5.045e-07 |
+| rank-bm25 | hakua hybrid GGUF | 0.001953 | 0.035156 | 4.862e-05 |
+| rank-bm25 | FAISS + same GGUF | 0.001953 | 0.035156 | 0.000305 |
+| LangChain BM25 | LlamaIndex BM25 | 0.001953 | 0.035156 | 4.817e-07 |
+| LangChain BM25 | hakua hybrid GGUF | 0.001953 | 0.035156 | 4.861e-05 |
+| LangChain BM25 | FAISS + same GGUF | 0.001953 | 0.035156 | 0.000306 |
+| LlamaIndex BM25 | hakua hybrid GGUF | 0.001953 | 0.035156 | 4.890e-05 |
+| LlamaIndex BM25 | FAISS + same GGUF | 0.001953 | 0.035156 | 0.000310 |
+| hakua hybrid GGUF | FAISS + same GGUF | 0.037109 | 0.074219 | 0.018810 |
+
+These p-values describe this paired latency sample only; they are not accuracy claims or
+proof of general library superiority. Holm correction is applied across all pairwise
+Wilcoxon tests emitted by the harness for that operation family.
+
+Dataset-specific validation found non-empty chunk output for all chunkers. Exact-record
+hit rate at top-k=5 was 33/40 (82.5%) for hakua lexical and hakua hybrid GGUF, 38/40
+(95.0%) for rank-bm25 and LangChain BM25, 39/40 (97.5%) for LlamaIndex BM25, and 18/40
+(45.0%) for FAISS+GGUF on this synthetic set. This is a small query-set check, not a
+cross-domain retrieval-quality benchmark. Generated JSON/PNG stay outside Git; rerun the
+commands above to reproduce on another machine.
+
+### Speculative-hybrid three-group Friedman
+
+`scripts/benchmark_speculative_hybrid.py` compares `lexical_only`, `always_hybrid`, and
+`speculative_hybrid` on the same corpus after sweeping `min_top_score` (primary early-accept
+gate; absolute `final_score` margins often collapse on uniform confidence/salience data).
+One recorded run (seed 42, 30 samples, warmup 1, 8 repetitions) chose Pareto
+`min_top_score=0.40` (hit-rate tied with hybrid at 0.800; minimum latency). An interior
+early-accept candidate near 50% was `min_top_score=0.55` (early-accept rate ≈ 0.367).
+Mean latencies at the Pareto gate: lexical 56.8 ms, speculative 58.3 ms, always-hybrid
+22800.2 ms.
+
+| Test | Statistic | p-value | Reject H₀ (α=0.05) |
+|---|---:|---:|---|
+| Friedman χ² (3 groups) | 12.0 | 0.002479 | yes |
+
+| Primary | Comparator | Wilcoxon p | Holm-adjusted Wilcoxon p | Paired-t p |
+|---|---|---:|---:|---:|
+| lexical_only | always_hybrid | 0.007812 | 0.023438 | 1.371e-06 |
+| lexical_only | speculative_hybrid | 0.843750 | 0.843750 | 0.660915 |
+| always_hybrid | speculative_hybrid | 0.007812 | 0.023438 | 1.369e-06 |
 
 ### External references
 
 The measured comparison uses [LangChain Text Splitters](https://docs.langchain.com/oss/python/integrations/splitters/recursive_text_splitter),
 [LlamaIndex SentenceSplitter](https://docs.llamaindex.ai/en/stable/module_guides/loading/node_parsers/modules.html),
-and [rank-bm25](https://pypi.org/project/rank-bm25/), with versions pinned in
-`benchmarks/requirements.txt`. NetworkX, PyTorch Geometric, and FAISS remain external
-references only; this repository does not publish direct measurements for them.
+[rank-bm25](https://pypi.org/project/rank-bm25/), LangChain/LlamaIndex BM25 retrievers,
+and [FAISS](https://github.com/facebookresearch/faiss) with versions pinned in
+`benchmarks/requirements.txt`. NetworkX and PyTorch Geometric remain external references
+only; this repository does not publish direct measurements for them.
 
 ## Reproducible synthetic data
 

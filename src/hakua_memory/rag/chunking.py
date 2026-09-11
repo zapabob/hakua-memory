@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import uuid
 from typing import Sequence
 
@@ -14,16 +13,27 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _now_iso() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
-
-
 def _estimate_tokens(text: str) -> int:
-    """Rough token estimate: CJK chars count individually, words by whitespace."""
-    cjk = len(re.findall(r"[一-鿿぀-ヿ가-힯]", text))
-    non_cjk = re.sub(r"[一-鿿぀-ヿ가-힯]", "", text)
-    words = len(non_cjk.split())
+    """Rough token estimate without regex: CJK chars + whitespace-separated words."""
+    cjk = 0
+    words = 0
+    in_word = False
+    for ch in text:
+        code = ord(ch)
+        # CJK Unified + Hiragana/Katakana + Hangul syllables
+        if (
+            0x4E00 <= code <= 0x9FFF
+            or 0x3040 <= code <= 0x30FF
+            or 0xAC00 <= code <= 0xD7AF
+        ):
+            cjk += 1
+            in_word = False
+        elif ch.isspace():
+            in_word = False
+        else:
+            if not in_word:
+                words += 1
+                in_word = True
     return cjk + words
 
 
@@ -45,16 +55,19 @@ def chunk_text(
     if not paragraphs:
         paragraphs = [text.strip()]
 
+    # Cache paragraph token lengths to avoid repeated full scans.
+    para_lens = [_estimate_tokens(p) for p in paragraphs]
+
     chunks: list[Chunk] = []
     current: list[str] = []
     current_len = 0
     char_offset = 0
     idx = 0
 
-    for para in paragraphs:
-        para_len = _estimate_tokens(para)
+    for para, para_len in zip(paragraphs, para_lens, strict=True):
         if current_len + para_len > chunk_size and current:
             content = "\n\n".join(current)
+            token_count = _estimate_tokens(content)
             chunks.append(
                 Chunk(
                     chunk_id=f"chunk-{uuid.uuid4().hex[:12]}",
@@ -67,7 +80,7 @@ def chunk_text(
                     section=section,
                     start_char=char_offset,
                     end_char=char_offset + len(content),
-                    token_count=_estimate_tokens(content),
+                    token_count=token_count,
                 )
             )
             idx += 1

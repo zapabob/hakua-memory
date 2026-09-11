@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-# Import ACL constants for convenience
 from .models import (
     ACL_DELETE,
     ACL_READ,
@@ -21,7 +22,9 @@ from .models import (
     Document,
     MeetingItem,
 )
-from .schema import ALL_DDL
+from .schema import ALL_DDL, DDL_CHUNKS_FTS, DDL_DOCUMENTS_FTS
+
+logger = logging.getLogger("hakua_memory.rag")
 
 
 def _now_iso() -> str:
@@ -34,23 +37,88 @@ class DocumentStore:
     def __init__(self, db_path: Path | str) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        self._connection: sqlite3.Connection | None = None
+        self.like_fallback_count = 0
+        self.fts_hit_count = 0
         self._init_schema()
+
+    def _open_connection(self) -> sqlite3.Connection:
+        if self._connection is not None:
+            return self._connection
+        conn = sqlite3.connect(
+            str(self.db_path),
+            timeout=5.0,
+            check_same_thread=False,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        self._connection = conn
+        return conn
+
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        with self._lock:
+            conn = self._open_connection()
+            try:
+                yield conn
+            finally:
+                # Persistent connection: commit writes, never close here.
+                if conn.in_transaction:
+                    conn.commit()
+
+    def close(self) -> None:
+        """Close the persistent SQLite connection."""
+        with self._lock:
+            if self._connection is not None:
+                try:
+                    self._connection.close()
+                finally:
+                    self._connection = None
 
     def _init_schema(self) -> None:
         with self._conn() as conn:
             for ddl in ALL_DDL:
                 conn.executescript(ddl)
+            self._ensure_trigram_fts(conn)
             conn.commit()
 
-    @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        try:
-            yield conn
-        finally:
-            conn.close()
+    def _ensure_trigram_fts(self, conn: sqlite3.Connection) -> None:
+        """Rebuild FTS tables with trigram tokenizer when still on unicode61."""
+        for table, ddl, rebuild_sql in (
+            (
+                "chunks_fts",
+                DDL_CHUNKS_FTS,
+                "INSERT INTO chunks_fts(chunk_id, content) SELECT chunk_id, content FROM chunks",
+            ),
+            (
+                "documents_fts",
+                DDL_DOCUMENTS_FTS,
+                "INSERT INTO documents_fts(document_id, title) SELECT document_id, title FROM documents",
+            ),
+        ):
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+            sql = (row[0] if row else "") or ""
+            if "tokenize='trigram'" in sql or 'tokenize="trigram"' in sql:
+                continue
+            if row is None:
+                try:
+                    conn.executescript(ddl)
+                except sqlite3.Error as exc:
+                    logger.warning("rag: FTS create failed for %s: %s", table, exc)
+                continue
+            try:
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
+                conn.executescript(ddl)
+                conn.execute(rebuild_sql)
+            except sqlite3.Error as exc:
+                logger.warning("rag: trigram FTS rebuild failed for %s: %s", table, exc)
 
     # ── Document CRUD ─────────────────────────────────────────────
 
@@ -86,6 +154,19 @@ class DocumentStore:
         if not row:
             return None
         return _row_to_document(row)
+
+    def get_documents_by_ids(self, document_ids: list[str]) -> dict[str, Document]:
+        """Batch-load documents to avoid N+1 lookups during retrieval."""
+        if not document_ids:
+            return {}
+        unique_ids = list(dict.fromkeys(document_ids))
+        placeholders = ",".join("?" for _ in unique_ids)
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM documents WHERE document_id IN ({placeholders})",
+                unique_ids,
+            ).fetchall()
+        return {row["document_id"]: _row_to_document(row) for row in rows}
 
     def update_document_version(
         self, document_id: str, new_version: str, *, new_content_hash: str = ""
@@ -148,31 +229,43 @@ class DocumentStore:
 
     def insert_chunk(self, chunk: Chunk) -> str:
         with self._conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO chunks (
-                    chunk_id, document_id, chunk_index, content, content_hash,
-                    page_number, slide_number, section, start_char, end_char,
-                    token_count, metadata_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    chunk.chunk_id, chunk.document_id, chunk.chunk_index,
-                    chunk.content, chunk.content_hash, chunk.page_number,
-                    chunk.slide_number, chunk.section, chunk.start_char,
-                    chunk.end_char, chunk.token_count, _json_dump(chunk.metadata),
-                    _now_iso(),
-                ),
-            )
-            conn.execute(
-                "INSERT INTO chunks_fts (chunk_id, content) VALUES (?, ?)",
-                (chunk.chunk_id, chunk.content),
-            )
+            self._insert_chunk_row(conn, chunk)
             conn.commit()
         return chunk.chunk_id
 
     def insert_chunks(self, chunks: list[Chunk]) -> list[str]:
-        return [self.insert_chunk(c) for c in chunks]
+        """Insert many chunks on one connection/transaction."""
+        if not chunks:
+            return []
+        ids: list[str] = []
+        with self._conn() as conn:
+            for chunk in chunks:
+                self._insert_chunk_row(conn, chunk)
+                ids.append(chunk.chunk_id)
+            conn.commit()
+        return ids
+
+    def _insert_chunk_row(self, conn: sqlite3.Connection, chunk: Chunk) -> None:
+        conn.execute(
+            """
+            INSERT INTO chunks (
+                chunk_id, document_id, chunk_index, content, content_hash,
+                page_number, slide_number, section, start_char, end_char,
+                token_count, metadata_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                chunk.chunk_id, chunk.document_id, chunk.chunk_index,
+                chunk.content, chunk.content_hash, chunk.page_number,
+                chunk.slide_number, chunk.section, chunk.start_char,
+                chunk.end_char, chunk.token_count, _json_dump(chunk.metadata),
+                _now_iso(),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO chunks_fts (chunk_id, content) VALUES (?, ?)",
+            (chunk.chunk_id, chunk.content),
+        )
 
     def get_chunk(self, chunk_id: str) -> Optional[Chunk]:
         with self._conn() as conn:
@@ -183,17 +276,28 @@ class DocumentStore:
             return None
         return _row_to_chunk(row)
 
+    def list_chunks_for_document(self, document_id: str) -> list[Chunk]:
+        """Return all chunks for a document ordered by index."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM chunks WHERE document_id = ? ORDER BY chunk_index",
+                (document_id,),
+            ).fetchall()
+        return [_row_to_chunk(row) for row in rows]
+
     def search_chunks_fts(
         self, query: str, *, top_k: int = 16, principal: str = ""
     ) -> list[Chunk]:
         """Full-text search on chunks, optionally filtered by ACL.
-        Falls back to LIKE for CJK-heavy queries where FTS may not tokenize well."""
-        # Build FTS query: split into terms and AND them for better CJK handling
-        terms = query.split()
-        if len(terms) > 1:
-            fts_query = " AND ".join(terms)
-        else:
-            fts_query = query
+
+        Uses trigram FTS first; falls back to LIKE for very short CJK terms.
+        """
+        terms = [t for t in query.split() if t] or [query]
+        # Trigram MATCH needs tokens of length >= 3.
+        fts_terms = [t for t in terms if len(t) >= 3]
+        if len(query.strip()) >= 3 and query.strip() not in fts_terms:
+            fts_terms.append(query.strip())
+        fts_query = " OR ".join(f'"{t.replace(chr(34), " ")}"' for t in fts_terms) if fts_terms else ""
 
         if principal:
             sql_fts = """
@@ -208,7 +312,7 @@ class DocumentStore:
                 JOIN acl a ON c.document_id = a.document_id
                 WHERE ({}) AND a.principal = ?
                 ORDER BY chunk_index LIMIT ?
-            """.format(" AND ".join(["c.content LIKE ?"] * len(terms)))
+            """.format(" OR ".join(["c.content LIKE ?"] * len(terms)))
             params_fts: list[Any] = [fts_query, principal, top_k]
             like_terms = [f"%{t}%" for t in terms]
             params_like: list[Any] = like_terms + [principal, top_k]
@@ -223,13 +327,22 @@ class DocumentStore:
                 SELECT c.* FROM chunks c
                 WHERE ({})
                 ORDER BY chunk_index LIMIT ?
-            """.format(" AND ".join(["c.content LIKE ?"] * len(terms)))
+            """.format(" OR ".join(["c.content LIKE ?"] * len(terms)))
             params_fts = [fts_query, top_k]
             like_terms = [f"%{t}%" for t in terms]
             params_like = like_terms + [top_k]
+
         with self._conn() as conn:
-            rows = conn.execute(sql_fts, params_fts).fetchall()
-            if not rows:
+            rows: list[sqlite3.Row] = []
+            if fts_query:
+                try:
+                    rows = conn.execute(sql_fts, params_fts).fetchall()
+                except sqlite3.Error:
+                    rows = []
+            if rows:
+                self.fts_hit_count += 1
+            else:
+                self.like_fallback_count += 1
                 rows = conn.execute(sql_like, params_like).fetchall()
         return [_row_to_chunk(row) for row in rows]
 
@@ -356,7 +469,7 @@ class DocumentStore:
                 document_id=row["document_id"],
                 principal=row["principal"],
                 permission=row["permission"],
-                department=row.get("department", ""),
+                department=row["department"] if "department" in row.keys() else "",
                 granted_at=row["granted_at"],
             )
             for row in rows
@@ -456,6 +569,8 @@ class DocumentStore:
             "citations": citation_count,
             "meeting_items": meeting_count,
             "acl_entries": acl_count,
+            "fts_hit_count": self.fts_hit_count,
+            "like_fallback_count": self.like_fallback_count,
         }
 
 
@@ -470,7 +585,7 @@ def _json_load(text: str) -> dict[str, Any]:
     try:
         return json.loads(text or "{}")
     except json.JSONDecodeError:
-        return {}  # type: ignore[return-value]
+        return {}
 
 
 def _row_to_document(row: sqlite3.Row) -> Document:

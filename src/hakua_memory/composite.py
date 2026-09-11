@@ -2,47 +2,88 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from hakua_memory.ebbinghaus.store import EbbinghausMemoryStore
 from hakua_memory.obsidian import write_diary
-from hakua_memory.rag import (
-    AclEntry,
-    DocumentStore,
-    RagResult,
-    detect_contradictions,
-    extract_meeting_items,
-    ingest_document,
-    ingest_markdown_string,
-    ingest_text_string,
-    render_citation_context,
-    search_chunks,
-)
 from hakua_memory.semantic_graph.embedding.base import EmbeddingBackend
-from hakua_memory.semantic_graph.retrieval import hybrid_search_and_rank
+from hakua_memory.semantic_graph.retrieval import (
+    hybrid_search_and_rank,
+    speculative_hybrid_search_and_rank,
+)
 from hakua_memory.semantic_graph.store import SemanticGraphStore
+
+if TYPE_CHECKING:
+    from hakua_memory.rag.models import AclEntry
+    from hakua_memory.rag.retrieval import RagResult
+    from hakua_memory.rag.store import DocumentStore
 
 
 class CompositeMemory:
-    """Single entrypoint for local composite memory."""
+    """Single entrypoint for local composite memory.
 
-    def __init__(self, root: Path) -> None:
+    Embedding backends remain first-class for hybrid search quality. Pass an
+    ``EmbeddingBackend`` to :meth:`search` (llama.cpp HTTP or in-process via
+    the ``[embedding]`` extra). RAG modules load lazily so remember/recall-only
+    paths stay light.
+    """
+
+    def __init__(self, root: Path, *, enable_rag: bool = True) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.ebbinghaus = EbbinghausMemoryStore(self.root / "ebbinghaus.db")
         self.semantic = SemanticGraphStore(self.root / "semantic.db")
-        self.documents = DocumentStore(self.root / "rag.db")
+        self._enable_rag = enable_rag
+        self._documents: DocumentStore | None = None
 
-    def remember(self, content: str, tags: Optional[list[str]] = None) -> dict[str, Any]:
-        return self.ebbinghaus.remember(content=content, tags=tags or [])
+    @property
+    def documents(self) -> DocumentStore:
+        """Lazy DocumentStore so import/RSS stay light until RAG is used."""
+        if self._documents is None:
+            if not self._enable_rag:
+                raise RuntimeError("RAG store is disabled for this CompositeMemory")
+            from hakua_memory.rag.store import DocumentStore
+
+            self._documents = DocumentStore(self.root / "rag.db")
+        return self._documents
+
+    def remember(
+        self,
+        content: str,
+        tags: Optional[list[str]] = None,
+        *,
+        salience: float = 0.65,
+        valence: float = 0.0,
+        source: str = "",
+        session_id: str = "",
+        memory_type: str = "episodic",
+    ) -> dict[str, Any]:
+        """Store an episodic/semantic cue with optional salience and valence.
+
+        ``salience`` and ``valence`` are passed through to
+        :meth:`EbbinghausMemoryStore.remember` so sleep/dream consolidation can
+        keep high-value traces without dropping to the store API.
+        """
+        return self.ebbinghaus.remember(
+            content=content,
+            tags=tags or [],
+            salience=salience,
+            valence=valence,
+            source=source,
+            session_id=session_id,
+            memory_type=memory_type,
+        )
 
     def recall(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         return self.ebbinghaus.recall(query, limit=top_k)
 
-    def sleep(self) -> dict[str, Any]:
-        return self.ebbinghaus.sleep_cycle()
+    def sleep(
+        self,
+        **sleep_kwargs: Any,
+    ) -> dict[str, Any]:
+        """Run one sleep-cycle consolidation pass (optional kwargs forwarded)."""
+        return self.ebbinghaus.sleep_cycle(**sleep_kwargs)
 
     def add_node(self, node: dict[str, Any]) -> dict[str, Any]:
         self.semantic.ensure_ready()
@@ -54,7 +95,24 @@ class CompositeMemory:
         *,
         top_k: int = 8,
         backend: Optional[EmbeddingBackend] = None,
+        speculative: bool = False,
+        margin_threshold: float = 0.0,
+        min_top_score: float = 0.55,
     ) -> list[dict[str, Any]]:
+        """Hybrid lexical + dense search. Pass ``backend`` for embedding quality.
+
+        When ``speculative=True`` and ``backend`` is set, lexical drafts early-accept
+        on high margin; otherwise dense hybrid verifies (speculative-hybrid path).
+        """
+        if speculative and backend is not None:
+            return speculative_hybrid_search_and_rank(
+                self.semantic,
+                query,
+                backend=backend,
+                top_k=top_k,
+                margin_threshold=margin_threshold,
+                min_top_score=min_top_score,
+            )
         return hybrid_search_and_rank(
             self.semantic,
             query,
@@ -66,6 +124,8 @@ class CompositeMemory:
 
     def ingest_document(self, path: Path, **kwargs: Any) -> dict[str, Any]:
         """Ingest a document file and store it with chunks."""
+        from hakua_memory.rag.ingestion import ingest_document
+
         doc, chunks = ingest_document(path, **kwargs)
         self.documents.insert_document(doc)
         chunk_ids = self.documents.insert_chunks(chunks)
@@ -78,6 +138,8 @@ class CompositeMemory:
 
     def ingest_markdown(self, text: str, **kwargs: Any) -> dict[str, Any]:
         """Ingest a markdown string."""
+        from hakua_memory.rag.ingestion import ingest_markdown_string
+
         doc, chunks = ingest_markdown_string(text, **kwargs)
         self.documents.insert_document(doc)
         chunk_ids = self.documents.insert_chunks(chunks)
@@ -89,6 +151,8 @@ class CompositeMemory:
 
     def ingest_text(self, text: str, **kwargs: Any) -> dict[str, Any]:
         """Ingest a plain text string."""
+        from hakua_memory.rag.ingestion import ingest_text_string
+
         doc, chunks = ingest_text_string(text, **kwargs)
         self.documents.insert_document(doc)
         chunk_ids = self.documents.insert_chunks(chunks)
@@ -108,6 +172,8 @@ class CompositeMemory:
         department: str = "",
     ) -> list[dict[str, Any]]:
         """Search ingested documents with full-text search."""
+        from hakua_memory.rag.retrieval import search_chunks
+
         results = search_chunks(
             self.documents,
             query,
@@ -126,8 +192,9 @@ class CompositeMemory:
         format: str = "markdown",
     ) -> str:
         """Render citation context from search results."""
-        # Rebuild RagResult objects from dicts
-        rag_results = []
+        from hakua_memory.rag.retrieval import RagResult, render_citation_context
+
+        rag_results: list[RagResult] = []
         for r in results:
             chunk = self.documents.get_chunk(r["chunk_id"])
             doc = self.documents.get_document(r["document_id"])
@@ -146,6 +213,8 @@ class CompositeMemory:
         self, document_id: str, *, auto_store: bool = True
     ) -> list[dict[str, Any]]:
         """Extract meeting items (decisions, tasks, action items) from a document."""
+        from hakua_memory.rag.meeting import extract_meeting_items
+
         chunks = self._get_chunks(document_id)
         items = extract_meeting_items(
             document_id, chunks, store=self.documents, auto_store=auto_store
@@ -169,6 +238,8 @@ class CompositeMemory:
         min_confidence: float = 0.6,
     ) -> list[dict[str, Any]]:
         """Detect contradictions between documents."""
+        from hakua_memory.rag.contradiction import detect_contradictions
+
         contradictions = detect_contradictions(
             self.documents,
             document_ids=document_ids,
@@ -198,6 +269,8 @@ class CompositeMemory:
             permission: "read", "write", or "delete".
             department: Optional department scope.
         """
+        from hakua_memory.rag.models import AclEntry
+
         entry = AclEntry(
             document_id=document_id,
             principal=principal,
@@ -232,26 +305,28 @@ class CompositeMemory:
 
     def _get_chunks(self, document_id: str) -> list:
         """Get all chunks for a document."""
-        with self.documents._conn() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM chunks WHERE document_id = ? ORDER BY chunk_index",
-                (document_id,),
-            ).fetchall()
-        from hakua_memory.rag.store import _row_to_chunk
-        return [_row_to_chunk(row) for row in rows]
+        return self.documents.list_chunks_for_document(document_id)
 
     def close(self) -> None:
         """Close all underlying stores."""
         self.ebbinghaus.close()
+        self.semantic.close()
+        if self._documents is not None:
+            self._documents.close()
+            self._documents = None
 
     def export_wiki(self, wiki_root: Path) -> dict[str, Any]:
         path = write_diary(wiki_root, "composite-export", "# CompositeMemory export\n")
         return {"diary": str(path)}
 
     def stats(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "ebbinghaus": self.ebbinghaus.stats(),
             "semantic_graph": self.semantic.get_status_counts(),
-            "rag": self.documents.stats(),
         }
+        if self._documents is not None:
+            result["rag"] = self._documents.stats()
+        elif self._enable_rag:
+            # Keep API shape without forcing RAG open on remember-only paths.
+            result["rag"] = {"initialized": False}
+        return result

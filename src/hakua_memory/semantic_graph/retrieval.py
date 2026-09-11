@@ -137,20 +137,33 @@ def hybrid_search_and_rank(
     subtypes: Optional[list[str]] = None,
     authorities: Optional[list[str]] = None,
     run_id: Optional[str] = None,
+    lexical_results: Optional[list[dict[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
-    """Fuse existing lexical candidates with exact dense candidates read-only."""
-    lexical = search_and_rank(
-        store,
-        query,
-        top_k=top_k,
-        min_confidence=min_confidence,
-        statuses=statuses,
-        node_types=node_types,
-        subtypes=subtypes,
-        authorities=authorities,
-        run_id=run_id,
+    """Fuse lexical candidates with exact dense candidates (read-only).
+
+    Pass ``lexical_results`` to reuse a prior draft lexical pass (speculative verify).
+    """
+    lexical = (
+        list(lexical_results)
+        if lexical_results is not None
+        else search_and_rank(
+            store,
+            query,
+            top_k=top_k,
+            min_confidence=min_confidence,
+            statuses=statuses,
+            node_types=node_types,
+            subtypes=subtypes,
+            authorities=authorities,
+            run_id=run_id,
+        )
     )
-    if not embedding_enabled or backend is None or not backend.available() or not lexical and top_k <= 0:
+    if (
+        not embedding_enabled
+        or backend is None
+        or not backend.available()
+        or top_k <= 0
+    ):
         return lexical
     active_statuses = statuses or ["asserted", "accepted"]
     try:
@@ -207,6 +220,104 @@ def hybrid_search_and_rank(
         return results or lexical
     except (EmbeddingBackendError, EmbeddingVectorError, KeyError, ValueError):
         return lexical
+
+
+def lexical_margin(results: list[dict[str, Any]]) -> float:
+    """Top-1 minus top-2 ``final_score`` margin; 1.0 if only one hit.
+
+    On corpora with uniform confidence/salience this is often ~0, so speculative
+    early-accept should primarily key off ``min_top_score``.
+    """
+    if not results:
+        return 0.0
+    top = float(results[0].get("final_score") or 0.0)
+    if len(results) == 1:
+        return 1.0
+    second = float(results[1].get("final_score") or 0.0)
+    return max(0.0, top - second)
+
+
+def speculative_hybrid_search_and_rank(
+    store: Any,
+    query: str,
+    *,
+    backend: EmbeddingBackend | None = None,
+    embedding_enabled: bool = True,
+    top_k: int = 8,
+    min_confidence: float = 0.60,
+    margin_threshold: float = 0.0,
+    min_top_score: float = 0.55,
+    statuses: Optional[list[str]] = None,
+    node_types: Optional[list[str]] = None,
+    subtypes: Optional[list[str]] = None,
+    authorities: Optional[list[str]] = None,
+    run_id: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Draft with lexical retrieval; verify with dense hybrid only when uncertain.
+
+    Early-accept (skip GGUF) when:
+    - lexical hits exist,
+    - top-1 ``final_score`` >= ``min_top_score``, and
+    - top-1/top-2 margin >= ``margin_threshold``.
+
+    ``min_top_score`` is the primary gate when score margins collapse (common on
+    uniform confidence/salience corpora). Otherwise fall through to hybrid verify
+    while reusing the draft lexical results. Systems-level draft/verify — not
+    token-level speculative decoding.
+    """
+    lexical = search_and_rank(
+        store,
+        query,
+        top_k=top_k,
+        min_confidence=min_confidence,
+        statuses=statuses,
+        node_types=node_types,
+        subtypes=subtypes,
+        authorities=authorities,
+        run_id=run_id,
+    )
+    if (
+        not embedding_enabled
+        or backend is None
+        or not backend.available()
+        or top_k <= 0
+    ):
+        return lexical
+
+    top_score = float(lexical[0].get("final_score") or 0.0) if lexical else 0.0
+    margin = lexical_margin(lexical)
+    early_accept = (
+        bool(lexical)
+        and top_score >= min_top_score
+        and margin >= margin_threshold
+    )
+    if early_accept:
+        accepted = [dict(row) for row in lexical]
+        for row in accepted:
+            row["speculative_path"] = "lexical_early_accept"
+            row["lexical_margin"] = margin
+            row["lexical_top_score"] = top_score
+        return accepted
+
+    verified = hybrid_search_and_rank(
+        store,
+        query,
+        backend=backend,
+        embedding_enabled=True,
+        top_k=top_k,
+        min_confidence=min_confidence,
+        statuses=statuses,
+        node_types=node_types,
+        subtypes=subtypes,
+        authorities=authorities,
+        run_id=run_id,
+        lexical_results=lexical,
+    )
+    for row in verified:
+        row["speculative_path"] = "hybrid_verify"
+        row["lexical_margin"] = margin
+        row["lexical_top_score"] = top_score
+    return verified
 
 
 def render_context(nodes: list[dict[str, Any]], max_chars: int) -> Optional[str]:

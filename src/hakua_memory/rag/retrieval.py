@@ -89,16 +89,18 @@ def search_chunks(
     if not chunks:
         return []
 
+    docs = store.get_documents_by_ids([c.document_id for c in chunks])
     results: list[RagResult] = []
     for chunk in chunks:
-        doc = store.get_document(chunk.document_id)
+        doc = docs.get(chunk.document_id)
         if not doc:
             continue
         if document_type and doc.document_type != document_type:
             continue
         if department and doc.department != department:
             continue
-        bm25_score = 1.0 / (1.0 + abs(0.0))
+        # Prefer FTS rank signal when available via chunk order; keep stable mix.
+        bm25_score = 1.0 / (1.0 + (len(results) * 0.05))
         recency = math.exp(-_age_days(doc.ingested_at) / 365.0)
         score = 0.6 * bm25_score + 0.2 * recency + 0.2 * min(1.0, chunk.token_count / 200)
         results.append(RagResult(chunk=chunk, document=doc, score=score, rank=0))

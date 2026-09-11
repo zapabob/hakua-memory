@@ -135,7 +135,7 @@ DDL_CHUNKS_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     chunk_id UNINDEXED,
     content,
-    tokenize='unicode61'
+    tokenize='trigram'
 );
 """
 
@@ -143,7 +143,7 @@ DDL_DOCUMENTS_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
     document_id UNINDEXED,
     title,
-    tokenize='unicode61'
+    tokenize='trigram'
 );
 """
 

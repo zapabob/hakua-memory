@@ -1,4 +1,4 @@
-"""SQLite store for the semantic-graph plugin (connection-per-operation)."""
+"""SQLite store for the semantic-graph plugin (long-lived connection)."""
 
 from __future__ import annotations
 
@@ -26,10 +26,12 @@ from .sanitize import sanitize_metadata, sanitize_value
 
 logger = logging.getLogger("hakua_memory.semantic_graph")
 
-DB_SCHEMA_VERSION = 3
+DB_SCHEMA_VERSION = 4
 GRAPH_SCHEMA_VERSION = 1
 # Backwards-compatible alias retained for existing importers.
 SCHEMA_VERSION = DB_SCHEMA_VERSION
+# FTS5 trigram needs tokens of length >= 3; shorter terms fall back to LIKE.
+_FTS_MIN_TERM_LEN = 3
 
 DDL_CORE = """
 CREATE TABLE IF NOT EXISTS graph_runs (
@@ -213,13 +215,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
     node_id UNINDEXED,
     label,
     summary,
-    tokenize='unicode61'
+    tokenize='trigram'
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(
     artifact_id UNINDEXED,
     title,
     content,
-    tokenize='unicode61'
+    tokenize='trigram'
 );
 """
 
@@ -295,6 +297,9 @@ MIGRATION_V3_STATEMENTS = (
     """,
 )
 
+# V4 rebuilds FTS with trigram tokenizer for CJK substring MATCH (no new tables).
+MIGRATION_V4_FTS_TRIGRAM = True
+
 _NODE_EMBEDDING_COLUMNS = {
     "node_id", "namespace", "provider", "model", "revision",
     "serializer_version", "dimensions", "dtype", "vector_blob",
@@ -326,14 +331,17 @@ def new_id() -> str:
 
 
 class SemanticGraphStore:
-    """Per-operation SQLite access. Never share a connection across threads."""
+    """Long-lived SQLite access with thread-local transaction nesting."""
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.fts_enabled = False
         self._ready = False
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._local = threading.local()
+        self._conn: sqlite3.Connection | None = None
+        self.like_fallback_count = 0
+        self.fts_hit_count = 0
 
     def ensure_ready(self) -> None:
         if self._ready:
@@ -342,9 +350,26 @@ class SemanticGraphStore:
             if self._ready:
                 return
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._connect() as conn:
-                self._migrate(conn)
+            conn = self._open_connection()
+            self._migrate(conn)
             self._ready = True
+
+    def _open_connection(self) -> sqlite3.Connection:
+        if self._conn is not None:
+            return self._conn
+        conn = sqlite3.connect(
+            str(self.db_path),
+            timeout=5.0,
+            check_same_thread=False,
+            isolation_level=None,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        self._conn = conn
+        return conn
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -352,21 +377,8 @@ class SemanticGraphStore:
         if active is not None:
             yield active
             return
-        conn = sqlite3.connect(
-            str(self.db_path),
-            timeout=5.0,
-            check_same_thread=False,
-            isolation_level=None,
-        )
-        try:
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute("PRAGMA synchronous = NORMAL")
-            conn.execute("PRAGMA busy_timeout = 5000")
-            yield conn
-        finally:
-            conn.close()
+        with self._lock:
+            yield self._open_connection()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -387,6 +399,16 @@ class SemanticGraphStore:
                 raise
             finally:
                 self._local.connection = None
+
+    def close(self) -> None:
+        """Close the persistent SQLite connection."""
+        with self._lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                finally:
+                    self._conn = None
+                    self._ready = False
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])
@@ -412,6 +434,9 @@ class SemanticGraphStore:
                 target_version=3,
                 statements=MIGRATION_V3_STATEMENTS,
             )
+            version = 3
+        if version < 4:
+            self._migrate_fts_to_trigram(conn, target_version=4)
 
         self._detect_fts(conn)
 
@@ -422,6 +447,48 @@ class SemanticGraphStore:
         except sqlite3.Error as exc:
             logger.warning("semantic-graph: FTS5 unavailable, LIKE fallback: %s", exc)
         conn.execute("PRAGMA user_version = 1")
+
+    def _migrate_fts_to_trigram(
+        self, conn: sqlite3.Connection, *, target_version: int
+    ) -> None:
+        """Rebuild FTS5 tables with trigram tokenizer for CJK substring search."""
+        # Avoid executescript inside an explicit transaction: it auto-COMMITs.
+        for table in ("nodes_fts", "artifacts_fts"):
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+        try:
+            for statement in (
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+                    node_id UNINDEXED,
+                    label,
+                    summary,
+                    tokenize='trigram'
+                )
+                """,
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(
+                    artifact_id UNINDEXED,
+                    title,
+                    content,
+                    tokenize='trigram'
+                )
+                """,
+            ):
+                conn.execute(statement)
+            conn.execute(
+                "INSERT INTO nodes_fts(node_id, label, summary) "
+                "SELECT node_id, label, summary FROM nodes"
+            )
+            conn.execute(
+                "INSERT INTO artifacts_fts(artifact_id, title, content) "
+                "SELECT artifact_id, title, content FROM artifacts"
+            )
+        except sqlite3.Error as exc:
+            logger.warning(
+                "semantic-graph: trigram FTS migration failed, LIKE fallback: %s",
+                exc,
+            )
+        conn.execute(f"PRAGMA user_version = {int(target_version)}")
 
     def _apply_migration(
         self,
@@ -442,7 +509,10 @@ class SemanticGraphStore:
             conn.execute(f"PRAGMA user_version = {int(target_version)}")
             conn.execute("COMMIT")
         except Exception:
-            conn.execute("ROLLBACK")
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
             raise
 
     def _validate_node_embeddings_schema(self, conn: sqlite3.Connection) -> None:
@@ -1434,22 +1504,33 @@ class SemanticGraphStore:
 
             if self.fts_enabled:
                 try:
-                    ascii_terms = [t for t in terms if t.isascii()]
-                    fts_q = " OR ".join(f'"{t.replace(chr(34), " ")}"' for t in ascii_terms) or '"' + q.replace('"', ' ') + '"'
-                    extra_sql, extra_params = extras()
-                    rows = conn.execute(
-                        "SELECT n.*, bm25(nodes_fts) AS bm25_score FROM nodes_fts "
-                        "JOIN nodes n ON n.node_id = nodes_fts.node_id "
-                        f"WHERE nodes_fts MATCH ? AND n.status IN ({','.join('?' for _ in statuses)}) "
-                        "AND n.confidence >= ? "
-                        + (f"AND n.node_type IN ({','.join('?' for _ in node_types)}) " if node_types else "")
-                        + extra_sql + " ORDER BY bm25(nodes_fts) LIMIT ?",
-                        (fts_q, *statuses, min_confidence, *(node_types or []), *extra_params, top_k * 3),
-                    ).fetchall()
-                    if rows:
-                        return [dict(r) for r in rows]
+                    # Trigram FTS accepts CJK; require length >= 3 per SQLite trigram rules.
+                    fts_terms = [t for t in terms if len(t) >= _FTS_MIN_TERM_LEN]
+                    if len(compact) >= _FTS_MIN_TERM_LEN and compact not in fts_terms:
+                        fts_terms.append(compact)
+                    if len(q) >= _FTS_MIN_TERM_LEN and q not in fts_terms:
+                        fts_terms.append(q)
+                    fts_terms = list(dict.fromkeys(fts_terms))[:16]
+                    if fts_terms:
+                        fts_q = " OR ".join(
+                            f'"{t.replace(chr(34), " ")}"' for t in fts_terms
+                        )
+                        extra_sql, extra_params = extras()
+                        rows = conn.execute(
+                            "SELECT n.*, bm25(nodes_fts) AS bm25_score FROM nodes_fts "
+                            "JOIN nodes n ON n.node_id = nodes_fts.node_id "
+                            f"WHERE nodes_fts MATCH ? AND n.status IN ({','.join('?' for _ in statuses)}) "
+                            "AND n.confidence >= ? "
+                            + (f"AND n.node_type IN ({','.join('?' for _ in node_types)}) " if node_types else "")
+                            + extra_sql + " ORDER BY bm25(nodes_fts) LIMIT ?",
+                            (fts_q, *statuses, min_confidence, *(node_types or []), *extra_params, top_k * 3),
+                        ).fetchall()
+                        if rows:
+                            self.fts_hit_count += 1
+                            return [dict(r) for r in rows]
                 except sqlite3.Error:
                     pass
+            self.like_fallback_count += 1
             term_sql = []
             term_params: list[Any] = []
             for term in terms:

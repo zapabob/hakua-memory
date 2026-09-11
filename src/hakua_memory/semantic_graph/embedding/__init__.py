@@ -6,6 +6,7 @@ from .base import (
     EmbeddingModelIdentity,
 )
 from .fake import DeterministicFakeEmbeddingBackend
+from .gguf_local import LlamaCppPythonEmbeddingBackend
 from .llama_cpp import LlamaCppEmbeddingBackend
 from .serializer import (
     QUERY_INSTRUCTION,
@@ -30,6 +31,7 @@ __all__ = [
     "EmbeddingModelIdentity",
     "DeterministicFakeEmbeddingBackend",
     "LlamaCppEmbeddingBackend",
+    "LlamaCppPythonEmbeddingBackend",
     "QUERY_INSTRUCTION",
     "serialize_embedding_node",
     "serialize_embedding_query",
